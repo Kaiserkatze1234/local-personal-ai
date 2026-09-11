@@ -97,6 +97,8 @@ export class PiperHttpAdapter implements ModelProviderAdapter {
   }
 
   tts: TtsModelContract = {
+    // The request body carries `speed`, so playback must not re-apply it (§24).
+    appliesSpeed: true,
     synthesize: (req, signal) => this.synthesizeStream(req, signal),
   };
 

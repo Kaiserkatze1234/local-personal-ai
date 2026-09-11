@@ -28,13 +28,22 @@ export class VoiceService {
     return { transcribe: (r, s) => stt.transcribe(r, s), providerId: found.provider.id };
   }
 
-  private ttsAdapter(): { synthesize: (req: TtsRequest, signal?: AbortSignal) => AsyncIterable<Uint8Array>; providerId: string } | null {
+  private ttsAdapter(): {
+    synthesize: (req: TtsRequest, signal?: AbortSignal) => AsyncIterable<Uint8Array>;
+    providerId: string;
+    appliesSpeed: boolean;
+  } | null {
     const binding = this.roles.get('tts');
     if (!binding) return null;
     const found = this.providers.findModel(binding.modelId);
     const tts = found?.provider.adapter.tts;
     if (!tts) return null;
-    return { synthesize: (r, s) => tts.synthesize(r, s), providerId: found.provider.id };
+    return { synthesize: (r, s) => tts.synthesize(r, s), providerId: found.provider.id, appliesSpeed: tts.appliesSpeed === true };
+  }
+
+  /** Whether the bound TTS backend consumes speed itself (player skips rate otherwise, §24). */
+  ttsAppliesSpeed(): boolean {
+    return this.ttsAdapter()?.appliesSpeed ?? false;
   }
 
   async transcribe(audio: SttRequest, signal?: AbortSignal): Promise<SttResult | { unavailable: string }> {

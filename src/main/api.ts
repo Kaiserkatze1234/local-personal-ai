@@ -308,7 +308,8 @@ export class Api {
           ]);
         const chunks: Buffer[] = [];
         for await (const c of r as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(c));
-        return { audioBase64: Buffer.concat(chunks).toString('base64'), mimeType: 'audio/wav' };
+        // speedApplied lets the player decide whether to add playbackRate itself (§24).
+        return { audioBase64: Buffer.concat(chunks).toString('base64'), mimeType: 'audio/wav', speedApplied: app.voice.ttsAppliesSpeed() };
       }
 
       case 'extensions.panels':

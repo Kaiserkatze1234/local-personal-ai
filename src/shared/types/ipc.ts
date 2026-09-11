@@ -128,7 +128,8 @@ export interface InvokeContract {
   'recording.analyze': { args: [path: string, question?: string]; res: { ok: boolean; summary?: string; error?: string } };
   'recording.pickAndAnalyze': { args: [question?: string]; res: { ok: boolean; summary?: string; error?: string; cancelled?: boolean } };
   'voice.transcribe': { args: [audioBase64: string, mimeType: string]; res: { text: string; confidence?: number } };
-  'voice.speak': { args: [text: string]; res: { audioBase64: string; mimeType: string } };
+  /** speedApplied: backend consumed `speed` itself; player must not re-apply it (§24). */
+  'voice.speak': { args: [text: string]; res: { audioBase64: string; mimeType: string; speedApplied: boolean } };
   'extensions.panels': { args: []; res: { id: string; title: string; markdown: string }[] };
   'extensions.list': {
     args: [];

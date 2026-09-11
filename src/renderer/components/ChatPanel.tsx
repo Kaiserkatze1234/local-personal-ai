@@ -7,6 +7,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import type { PromptSuggestion } from '../../shared/types/events.js';
 import * as api from '../lib/api.js';
 import { L } from '../lib/i18n.js';
+import { resolveSpeechPlayback } from '../lib/playback.js';
 import { useStore } from '../state/store.js';
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -31,6 +32,12 @@ function speak(text: string): void {
     try {
       const r = await api.call('voice.speak', text.slice(0, 1200));
       const audio = new Audio(`data:${r.mimeType};base64,${r.audioBase64}`);
+      const voice = useStore.getState().config?.voice;
+      if (voice) {
+        const pb = resolveSpeechPlayback(voice, r);
+        audio.volume = pb.volume;
+        audio.playbackRate = pb.playbackRate;
+      }
       currentAudio = audio;
       audio.onended = () => {
         if (currentAudio === audio) currentAudio = null;
@@ -129,6 +136,7 @@ export function ChatPanel(): ReactElement {
   };
 
   const onSend = async (): Promise<void> => {
+    stopSpeech(); // sending a new message interrupts in-flight TTS (§24)
     const text = draft;
     setDraft('');
     setAttachShot(null);

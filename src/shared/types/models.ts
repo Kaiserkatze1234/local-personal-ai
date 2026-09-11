@@ -131,6 +131,13 @@ export interface SttModelContract {
 export interface TtsModelContract {
   /** Yields audio bytes (wav chunks). Provider decides container. */
   synthesize(req: TtsRequest, signal?: AbortSignal): AsyncIterable<Uint8Array>;
+  /**
+   * True when the backend applies `req.speed` during synthesis itself (e.g. a
+   * Piper-style server's `speed` parameter). The player must then NOT also
+   * change playback rate — otherwise a 1.5x setting would become 2.25x.
+   * Absent/false means the configured speed is only honored client-side (§24).
+   */
+  appliesSpeed?: boolean;
 }
 
 /**
