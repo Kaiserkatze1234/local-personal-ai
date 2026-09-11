@@ -8,6 +8,9 @@
  * for the user to see (§42 "must declare").
  */
 
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { PermissionId } from '../../shared/types/permissions.js';
 import type { ToolResult } from '../../shared/types/tools.js';
 import { AppError } from '../core/errors.js';
@@ -28,6 +31,8 @@ export interface ExtensionManifest {
   permissions: PermissionId[];
   /** Other extension ids that must be installed first. */
   dependencies: string[];
+  /** For disk extensions: module entry file (default main.mjs). */
+  main?: string;
 }
 
 export interface ExtensionContext {
@@ -53,6 +58,8 @@ export interface ExtensionState {
   activatedAt?: string;
   contributedTools: string[];
   contributedImporters: number;
+  /** Set when the extension came from disk; uninstall drops a .disabled marker there. */
+  sourceDir?: string;
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-_]{1,40}$/;
@@ -139,6 +146,67 @@ export class ExtensionRegistry {
     return state;
   }
 
+  /**
+   * §42: scan `<dir>/<id>/` for `manifest.json` + module entry (manifest's
+   * `main`, default `main.mjs`), validate and activate. Folders containing an
+   * `<id>.disabled` marker (left by uninstall) are skipped until it is
+   * removed. Errors are collected per-extension — one bad module can never
+   * break boot.
+   */
+  async loadFromDirectory(dir: string): Promise<{ loaded: string[]; skipped: string[]; errors: { id: string; error: string }[] }> {
+    const loaded: string[] = [];
+    const skipped: string[] = [];
+    const errors: { id: string; error: string }[] = [];
+    if (!existsSync(dir)) return { loaded, skipped, errors };
+    for (const entry of readdirSync(dir)) {
+      const extDir = join(dir, entry);
+      try {
+        if (!statSync(extDir).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      const manifestPath = join(extDir, 'manifest.json');
+      if (!existsSync(manifestPath)) continue;
+      if (existsSync(join(extDir, `${entry}.disabled`))) {
+        skipped.push(entry);
+        continue;
+      }
+      if (this.states.has(entry)) continue; // already active from a previous load
+      let manifest: ExtensionManifest;
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as ExtensionManifest;
+        if (!manifest.id) manifest = { ...manifest, id: entry };
+      } catch (err) {
+        errors.push({ id: entry, error: `manifest.json unreadable: ${(err as Error).message}` });
+        continue;
+      }
+      const mainFile = join(extDir, /^[\w./-]+$/.test(manifest.main ?? '') ? (manifest.main ?? 'main.mjs') : 'main.mjs');
+      if (!existsSync(mainFile)) {
+        errors.push({ id: entry, error: 'module entry not found (expected main.mjs)' });
+        continue;
+      }
+      try {
+        const mod = (await import(pathToFileURL(mainFile).href)) as { default?: ExtensionActivate };
+        if (typeof mod.default !== 'function') throw new Error('module must default-export an activate function');
+        const state = this.install(manifest, mod.default);
+        state.sourceDir = extDir;
+        loaded.push(entry);
+      } catch (err) {
+        errors.push({ id: entry, error: (err as Error).message });
+      }
+    }
+    return { loaded, skipped, errors };
+  }
+
+  /** True if the id came from disk and still has its folder (for re-enable UX). */
+  hasDiskSource(id: string): boolean {
+    return this.states.get(id)?.sourceDir !== undefined;
+  }
+
+  directoryOf(id: string): string | null {
+    return this.states.get(id)?.sourceDir ?? null;
+  }
+
   uninstall(id: string): boolean {
     const state = this.states.get(id);
     if (!state) return false;
@@ -150,6 +218,13 @@ export class ExtensionRegistry {
     for (const toolName of state.contributedTools) this.tools.unregister(toolName);
     if (state.contributedImporters > 0) unregisterImportersByPrefix(`${id}:`);
     this.permissions?.revokeSessionGrantsFor(state.manifest.permissions);
+    if (state.sourceDir) {
+      try {
+        writeFileSync(join(state.sourceDir, `${id}.disabled`), new Date().toISOString(), 'utf8');
+      } catch {
+        /* read-only folder: still uninstalled for this session */
+      }
+    }
     this.states.delete(id);
     return true;
   }

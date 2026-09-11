@@ -264,6 +264,33 @@ export class Api {
       case 'screen.capture':
         return app.vision.captureScreen(args[0] as import('./vision/visionService.js').CaptureRect | undefined);
 
+      case 'screen.captureRegion': {
+        const pick = app.host.pickRegion;
+        if (!pick) {
+          throw new AppError(
+            'not_implemented',
+            'Region selection needs the desktop shell (Electron). Pass an explicit rect to screen.capture instead.',
+            ['screen.capture accepts {x, y, width, height} in screenshot coordinates'],
+          );
+        }
+        const rect = await pick.call(app.host);
+        if (!rect) return { mimeType: 'none', dataBase64: '', cancelled: true };
+        return app.vision.captureScreen(rect);
+      }
+      case 'region.submit':
+        app.host.onRegionResult?.((args[0] as { x: number; y: number; width: number; height: number } | null) ?? null);
+        return 'submitted';
+
+      case 'recording.status':
+        return app.recordings.status();
+      case 'recording.analyze':
+        return app.recordings.summarize(String(args[0] ?? ''), args[1] ? String(args[1]) : undefined);
+      case 'recording.pickAndAnalyze': {
+        const path = (await app.host.pickFile?.('video')) ?? null;
+        if (!path) return { ok: false, error: 'no file picked', cancelled: true };
+        return app.recordings.summarize(path, args[0] ? String(args[0]) : undefined);
+      }
+
       case 'voice.transcribe': {
         const bytes = Buffer.from(String(args[0] ?? ''), 'base64');
         const r = await app.voice.transcribe({ audio: new Uint8Array(bytes), mimeType: String(args[1] ?? 'audio/webm') });
@@ -296,6 +323,10 @@ export class Api {
         }));
       case 'extensions.uninstall':
         return app.extensions.uninstall(String(args[0]));
+      case 'extensions.reload':
+        return app.extensions.loadFromDirectory(app.extensionsDir);
+      case 'extensions.info':
+        return { dir: app.extensionsDir };
 
       case 'overlay.show':
         app.host?.overlayShow?.();

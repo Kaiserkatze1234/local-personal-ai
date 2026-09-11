@@ -11,6 +11,7 @@ import type { AppEvent } from '../shared/types/events.js';
 import { Api } from './api.js';
 import { CoreApp, type HostBindings } from './app.js';
 import { OverlayController } from './electron/overlayController.js';
+import { RegionPicker } from './electron/regionPicker.js';
 import { createElectronScreenSource } from './electron/screenElectron.js';
 
 const gotLock = app.requestSingleInstanceLock({ id: 'main' });
@@ -31,6 +32,7 @@ async function boot(): Promise<void> {
   const dataDir = process.env[DATA_DIR_ENV] ?? join(app.getPath('userData'), 'lpai');
   const rendererDir = join(app.getAppPath(), 'dist', 'renderer');
   const devUrl = process.env[DEV_SERVER_ENV] ?? null;
+  const regionPicker = new RegionPicker(rendererDir, devUrl);
 
   overlay = new OverlayController(rendererDir, devUrl, () => core!.getConfig());
 
@@ -51,6 +53,8 @@ async function boot(): Promise<void> {
     },
     overlayShow: () => overlay?.show(),
     overlayHide: () => overlay?.hide(),
+    pickRegion: () => regionPicker.open(),
+    onRegionResult: (rect) => regionPicker.deliver(rect),
   };
 
   core = new CoreApp({ dataDir, host });

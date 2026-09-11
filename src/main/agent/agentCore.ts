@@ -118,7 +118,7 @@ export class AgentCore {
       this.tasks.transition(t.id, 'executing', { modelSelections: t.modelSelections }, 'execute');
 
       // ---- model<->tool loop (steps 7-10) ----
-      const system = this.contextEngine.systemPrompt(taskClass, cfg.personality);
+      const system = this.contextEngine.systemPrompt(taskClass, cfg.personality, cfg.general.language);
       const contextBlock = this.contextEngine.renderContextBlock(ctx);
       const history = this.loadHistory(input.conversationId, input.userText);
       const userMsg: ChatMessage = {
@@ -285,7 +285,10 @@ export class AgentCore {
     const chatMsgs: ChatMessage[] = [
       {
         role: 'system',
-        content: [this.contextEngine.systemPrompt(taskClass, cfg.personality), this.contextEngine.renderContextBlock(ctx)]
+        content: [
+          this.contextEngine.systemPrompt(taskClass, cfg.personality, cfg.general.language),
+          this.contextEngine.renderContextBlock(ctx),
+        ]
           .filter(Boolean)
           .join('\n\n'),
       },

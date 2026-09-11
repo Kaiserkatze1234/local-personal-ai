@@ -7,6 +7,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import { chunkText, type TextChunk } from '../../shared/util/text.js';
+import { extractDocxText } from './parseDocx.js';
+import { extractPdfText } from './parsePdf.js';
 
 export interface IngestResult {
   ok: boolean;
@@ -96,15 +98,23 @@ class PdfImporter implements Importer {
   id = 'pdf';
   detect = (ext: string): boolean => ext === '.pdf';
   ingest(path: string): IngestResult {
-    // Real PDF text extraction needs a parser dependency; keep it honest until
-    // Phase 9 wires one in (the app must not pretend to read what it cannot).
-    return {
-      ...baseResult(path, 'pdf'),
-      ok: false,
-      text: '',
-      chunks: [],
-      unavailableReason: 'PDF extraction not installed yet (Phase 9). Convert to text or install the optional pdf parser package.',
-    };
+    // Best-effort text layer extraction, dependency-free (§12 "PDF where
+    // supported"). Scanned PDFs have no text layer and say so — never faked.
+    try {
+      const r = extractPdfText(readFileSync(path));
+      if (!r.ok || !r.text) {
+        return { ...baseResult(path, 'pdf'), ok: false, text: '', chunks: [], unavailableReason: r.reason ?? 'PDF parse failed' };
+      }
+      return { ...baseResult(path, 'pdf'), ok: true, text: r.text, chunks: chunkText(r.text) };
+    } catch (err) {
+      return {
+        ...baseResult(path, 'pdf'),
+        ok: false,
+        text: '',
+        chunks: [],
+        unavailableReason: `PDF parse failed: ${(err as Error).message}`,
+      };
+    }
   }
 }
 
@@ -112,13 +122,23 @@ class DocxImporter implements Importer {
   id = 'docx';
   detect = (ext: string): boolean => ext === '.docx';
   ingest(path: string): IngestResult {
-    return {
-      ...baseResult(path, 'docx'),
-      ok: false,
-      text: '',
-      chunks: [],
-      unavailableReason: 'DOCX extraction not installed yet (Phase 9).',
-    };
+    // ZIP + document.xml read directly (§12 "DOCX where supported"); styles
+    // beyond headings/lists are flattened, footnotes/comments are not read.
+    try {
+      const text = extractDocxText(readFileSync(path));
+      if (text.trim().length === 0) {
+        return { ...baseResult(path, 'docx'), ok: false, text: '', chunks: [], unavailableReason: 'document.xml contained no text' };
+      }
+      return { ...baseResult(path, 'docx'), ok: true, text, chunks: chunkText(text) };
+    } catch (err) {
+      return {
+        ...baseResult(path, 'docx'),
+        ok: false,
+        text: '',
+        chunks: [],
+        unavailableReason: `DOCX parse failed: ${(err as Error).message}`,
+      };
+    }
   }
 }
 

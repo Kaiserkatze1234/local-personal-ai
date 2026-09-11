@@ -15,11 +15,25 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
+let currentAudio: HTMLAudioElement | null = null;
+
+function stopSpeech(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+}
+
 function speak(text: string): void {
+  stopSpeech(); // interruption: a new utterance cancels the previous one
   void (async () => {
     try {
       const r = await api.call('voice.speak', text.slice(0, 1200));
       const audio = new Audio(`data:${r.mimeType};base64,${r.audioBase64}`);
+      currentAudio = audio;
+      audio.onended = () => {
+        if (currentAudio === audio) currentAudio = null;
+      };
       await audio.play();
     } catch (err) {
       useStore.setState({ error: err instanceof api.ApiError ? err.message : String(err) });
@@ -68,6 +82,7 @@ export function ChatPanel(): ReactElement {
       recRef.current.stop();
       return;
     }
+    stopSpeech(); // talking over the assistant is how interruption should feel (§24)
     void (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -230,6 +245,38 @@ export function ChatPanel(): ReactElement {
             />
             <button title="attach current screen (needs a vision-capable model)" onClick={() => void capture()}>
               📷
+            </button>
+            <button
+              title="attach a screen region (drag to select)"
+              onClick={() =>
+                void (async () => {
+                  try {
+                    const r = await api.call('screen.captureRegion');
+                    if (!('cancelled' in r) || !r.cancelled) setAttachShot({ mimeType: r.mimeType, dataBase64: r.dataBase64 });
+                  } catch (err) {
+                    useStore.setState({ error: err instanceof api.ApiError ? err.message : String(err) });
+                  }
+                })()
+              }
+            >
+              🎯
+            </button>
+            <button
+              title="analyze a screen recording (needs ffmpeg + vision model)"
+              onClick={() =>
+                void (async () => {
+                  stopSpeech();
+                  try {
+                    const r = await api.call('recording.pickAndAnalyze', undefined);
+                    if (r.ok && r.summary) setDraft((d) => `${d}${d && !d.endsWith(' ') ? '\n\n' : ''}${r.summary}`);
+                    else if (!r.cancelled && r.error) useStore.setState({ error: r.error });
+                  } catch (err) {
+                    useStore.setState({ error: err instanceof api.ApiError ? err.message : String(err) });
+                  }
+                })()
+              }
+            >
+              🎬
             </button>
             <button
               title={recording ? 'stop dictation (voice → text)' : 'dictate (push-to-talk; global hotkey also toggles)'}

@@ -27,12 +27,17 @@ export function createElectronScreenSource(): ScreenSource {
       let image = primary.thumbnail;
       // NOTE: rect is in downscaled-thumbnail space (1920-wide) — good enough for analysis crops
       if (opts?.rect && image.getSize().width > 0) {
+        // rect arrives in physical display pixels; capture happens on the
+        // downscaled 1920-wide thumbnail -> scale proportionally
+        const disp = electronScreen.getPrimaryDisplay();
+        const physW = disp.size.width * disp.scaleFactor;
+        const scale = image.getSize().width / Math.max(1, physW);
         const r = opts.rect;
         const cropped = image.crop({
-          x: Math.max(0, r.x),
-          y: Math.max(0, r.y),
-          width: Math.max(8, r.width),
-          height: Math.max(8, r.height),
+          x: Math.max(0, Math.round(r.x * scale)),
+          y: Math.max(0, Math.round(r.y * scale)),
+          width: Math.max(8, Math.min(image.getSize().width, Math.round(r.width * scale))),
+          height: Math.max(8, Math.min(image.getSize().height, Math.round(r.height * scale))),
         });
         if (!cropped.isEmpty()) image = cropped;
       }

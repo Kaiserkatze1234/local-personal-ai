@@ -242,6 +242,31 @@ export function SettingsPanel(): ReactElement {
             <input type="checkbox" checked={cfg.voice.enabled} onChange={(e) => patch({ voice: { enabled: e.target.checked } })} /> voice
             I/O (requires STT/TTS provider)
           </label>
+          <Field label="STT base URL (whisper.cpp server)">
+            <input
+              value={cfg.voice.sttBaseUrl ?? ''}
+              onChange={(e) => patch({ voice: { sttBaseUrl: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
+              placeholder="http://127.0.0.1:8080"
+            />
+          </Field>
+          <Field label="TTS base URL (OpenAI-compatible /v1/audio/speech)">
+            <input
+              value={cfg.voice.ttsBaseUrl ?? ''}
+              onChange={(e) => patch({ voice: { ttsBaseUrl: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
+              placeholder="http://127.0.0.1:5000"
+            />
+          </Field>
+          <Field label="TTS voice id (backend-specific; empty = default)">
+            <input
+              value={cfg.voice.voiceName ?? ''}
+              onChange={(e) => patch({ voice: { voiceName: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
+              placeholder="de_DE-thorsten-medium"
+            />
+          </Field>
+          <div className="small muted">
+            Base URLs take effect on restart (providers register at boot). After restart, bind the “whisper.cpp” / “Local TTS” models to the
+            STT/TTS roles below.
+          </div>
           <div className="row">
             <Field label="dictation hotkey">
               <input

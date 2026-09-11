@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         main: 'src/renderer/index.html',
         overlay: 'src/renderer/overlay.html',
+        region: 'src/renderer/region.html',
       },
     },
   },

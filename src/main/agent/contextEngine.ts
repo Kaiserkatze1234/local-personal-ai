@@ -211,10 +211,18 @@ export class ContextEngine {
   systemPrompt(
     taskClass: ContextBuildRequest['taskClass'],
     persona: { verbosity: string; formality: string; technicalDepth: string },
+    language = 'de',
   ): string {
     const lines = [
       `You are ${'"Local Personal AI"'}, a local assistant running on the user's own machine.`,
       `Verbosity: ${persona.verbosity}. Formality: ${persona.formality}. Technical depth: ${persona.technicalDepth}.`,
+      // general.language decides the default response language ('off' disables the rule)
+      ...(language === 'off'
+        ? []
+        : [
+            `Default reply language: ${language === 'de' ? 'Deutsch (German)' : language}. Write prose, explanations and summaries in it. If the user clearly writes another language, mirror the user's language. Keep code, commands, file paths, identifiers and log output untranslated.`,
+            'Match this language for memory notes and skill descriptions you create.',
+          ]),
       'Never claim to have performed an action you did not perform; never claim success without verification.',
       'If a capability is unavailable, say so plainly and explain what would enable it.',
       'If a request is ambiguous and the ambiguity is harmless, state your assumption briefly and proceed; if it could cause an important or destructive action, ask first.',

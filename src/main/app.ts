@@ -28,6 +28,7 @@ import { PromptAssistant } from './promptAssistant/promptAssistant.js';
 import { MockProvider } from './providers/adapters/mock.js';
 import { OllamaAdapter } from './providers/adapters/ollama.js';
 import { OpenAiCompatAdapter } from './providers/adapters/openaiCompat.js';
+import { PiperHttpAdapter, WhisperHttpAdapter } from './providers/adapters/voiceServers.js';
 import { ModelRoleService } from './providers/modelRegistry.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { ModelRouter } from './providers/router.js';
@@ -75,6 +76,10 @@ export interface HostBindings {
   /** Desktop overlay window controls (Electron host, Phase 12). */
   overlayShow?: () => void;
   overlayHide?: () => void;
+  /** Region picker: shows a fullscreen selection window, resolves with the chosen rect. */
+  pickRegion?: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
+  /** Delivers the region window's result (via api 'region.submit') back to the host. */
+  onRegionResult?: (rect: { x: number; y: number; width: number; height: number } | null) => void;
 }
 
 export interface BootOptions {
@@ -107,6 +112,7 @@ export class CoreApp {
   readonly promptAssistant: PromptAssistant;
   readonly proactive: ProactiveService;
   readonly extensions: ExtensionRegistry;
+  extensionsDir: string = '';
   readonly vision: VisionService;
   readonly recordings: RecordingAnalysisService;
   readonly voice: VoiceService;
@@ -201,6 +207,7 @@ export class CoreApp {
     // always registered; each tool gates itself on Settings → Internet (§49)
     registerWebTools(this.tools, this.config);
     this.extensions = new ExtensionRegistry(this.tools, this.permissions, sub('ext'));
+    this.extensionsDir = join(opts.dataDir, 'extensions');
 
     this.memory = new MemoryService(memoryRepo, this.config, this.bus, sub('memory'));
     this.skills = new SkillService(skillRepo, learningRepo, sub('skills'));
@@ -268,6 +275,19 @@ export class CoreApp {
     log.info('booting core services');
     // §51: surface interrupted work before anything else
     const recoverable = this.tasks.markInterruptedOnBoot();
+
+    // §24: optional local voice backends, registered only when the user configures them
+    const voiceCfg = this.config.get().voice;
+    if (voiceCfg.sttBaseUrl)
+      this.providers.register(new WhisperHttpAdapter(voiceCfg.sttBaseUrl), { kind: 'voice-stt', baseUrl: voiceCfg.sttBaseUrl });
+    if (voiceCfg.ttsBaseUrl)
+      this.providers.register(new PiperHttpAdapter(voiceCfg.ttsBaseUrl), { kind: 'voice-tts', baseUrl: voiceCfg.ttsBaseUrl });
+
+    // §42: activate any extensions dropped into <data>/extensions (best-effort, never blocks boot)
+    void this.extensions.loadFromDirectory(this.extensionsDir).then((r) => {
+      if (r.loaded.length > 0) log.info(`extensions loaded: ${r.loaded.join(', ')}`);
+      for (const e of r.errors) log.warn(`extension "${e.id}" failed to load: ${e.error}`);
+    });
     if (recoverable.length > 0) log.info(`${recoverable.length} task(s) recovered into 'paused' for user decision`);
 
     await this.providers.refreshAll();

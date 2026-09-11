@@ -53,6 +53,13 @@ export interface AppConfig {
     sttModel: string | null;
     ttsModel: string | null;
     pushToTalkHotkey: string;
+    /** Local server backends (§24 adapters); null = not configured. */
+    sttBaseUrl: string | null;
+    ttsBaseUrl: string | null;
+    /** TTS voice selection passed to the backend. */
+    voiceName: string | null;
+    /** Recording clip analysis (§22): frames sampled at most every N seconds. */
+    recordingMaxFrames: number;
     speed: number;
     volume: number;
   };
@@ -144,6 +151,10 @@ export function defaultConfig(): AppConfig {
       pushToTalkHotkey: 'Ctrl+Alt+V',
       speed: 1,
       volume: 1,
+      sttBaseUrl: null,
+      ttsBaseUrl: null,
+      voiceName: null,
+      recordingMaxFrames: 16,
     },
     overlay: {
       enabled: false,

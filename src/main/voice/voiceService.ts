@@ -46,7 +46,8 @@ export class VoiceService {
           'No local speech-to-text backend is configured. Register one in Settings → Voice (e.g. a whisper.cpp HTTP server or a provider adapter exposing STT).',
       };
     }
-    return a.transcribe(audio, signal);
+    const lang = this.config.get().general.language;
+    return a.transcribe({ ...audio, language: audio.language ?? (lang !== 'off' ? lang : undefined) }, signal);
   }
 
   synthesize(text: string, voice?: string): AsyncIterable<Uint8Array> | { unavailable: string } {
@@ -56,7 +57,7 @@ export class VoiceService {
       return { unavailable: 'No local text-to-speech backend is configured. Add one in Settings → Voice.' };
     }
     const cfg = this.config.get().voice;
-    return a.synthesize({ text, voice: voice ?? undefined, speed: cfg.speed, volume: cfg.volume });
+    return a.synthesize({ text, voice: voice ?? cfg.voiceName ?? undefined, speed: cfg.speed, volume: cfg.volume });
   }
 
   status(): ComponentStatus {

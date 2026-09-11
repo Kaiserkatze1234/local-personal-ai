@@ -117,6 +117,11 @@ export interface InvokeContract {
   'prompt.analyze': { args: [inputId: string, text: string, projectId?: string]; res: PromptSuggestion[] };
   'prompt.analyzeDebounced': { args: [inputId: string, text: string, projectId?: string]; res: 'scheduled' };
   'screen.capture': { args: [rect?: CaptureRect]; res: { mimeType: string; dataBase64: string } };
+  'screen.captureRegion': { args: []; res: { mimeType: string; dataBase64: string; cancelled?: boolean } };
+  'region.submit': { args: [rect: CaptureRect | null]; res: string };
+  'recording.status': { args: []; res: { state: 'OK' | 'UNAVAILABLE'; message: string } };
+  'recording.analyze': { args: [path: string, question?: string]; res: { ok: boolean; summary?: string; error?: string } };
+  'recording.pickAndAnalyze': { args: [question?: string]; res: { ok: boolean; summary?: string; error?: string; cancelled?: boolean } };
   'voice.transcribe': { args: [audioBase64: string, mimeType: string]; res: { text: string; confidence?: number } };
   'voice.speak': { args: [text: string]; res: { audioBase64: string; mimeType: string } };
   'extensions.list': {
@@ -124,6 +129,8 @@ export interface InvokeContract {
     res: { id: string; name: string; version: string; description?: string; active: boolean; error?: string; contributedTools: string[] }[];
   };
   'extensions.uninstall': { args: [id: string]; res: boolean };
+  'extensions.reload': { args: []; res: { loaded: string[]; skipped: string[]; errors: { id: string; error: string }[] } };
+  'extensions.info': { args: []; res: { dir: string } };
   'overlay.show': { args: []; res: boolean };
   'overlay.hide': { args: []; res: boolean };
   'resource.mode': { args: [mode: ResourceMode | 'auto']; res: ResourceMode };
