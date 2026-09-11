@@ -6,6 +6,7 @@
  */
 import { type ReactElement, useState } from 'react';
 import type { PermissionMode, ResourceMode } from '../../shared/types/capabilities.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 export function FirstRunWizard(): ReactElement {
@@ -50,22 +51,22 @@ export function FirstRunWizard(): ReactElement {
 
         {step === 0 && (
           <>
-            <h2 style={{ marginTop: 0 }}>Welcome — everything stays on this machine</h2>
+            <h2 style={{ marginTop: 0 }}>{L('Welcome — everything stays on this machine')}</h2>
             <p className="muted">
               Local Personal AI runs with a runtime model you choose (Ollama or any local OpenAI-compatible server). Data lives in:{' '}
               <span className="mono">{s.info?.dataDir}</span>
             </p>
             <ul className="muted">
-              <li>No cloud account, no telemetry.</li>
-              <li>File access starts empty — you grant folders explicitly.</li>
-              <li>You can change all of this in Settings later.</li>
+              <li>{L('No cloud account, no telemetry.')}</li>
+              <li>{L('File access starts empty — you grant folders explicitly.')}</li>
+              <li>{L('You can change all of this in Settings later.')}</li>
             </ul>
           </>
         )}
 
         {step === 1 && (
           <>
-            <h2 style={{ marginTop: 0 }}>Local model provider</h2>
+            <h2 style={{ marginTop: 0 }}>{L('Local model provider')}</h2>
             {healthy.length > 0 ? (
               <div className="card">
                 {healthy.map((p) => (
@@ -84,7 +85,7 @@ export function FirstRunWizard(): ReactElement {
                   real reasoning model.
                 </p>
                 <div className="row" style={{ marginTop: 8 }}>
-                  <button onClick={() => void s.refreshProviders()}>Re-scan</button>
+                  <button onClick={() => void s.refreshProviders()}>{L('Re-scan')}</button>
                   <label className="check">
                     <input type="checkbox" checked={useDemo} onChange={(e) => setUseDemo(e.target.checked)} /> use demo model for now
                   </label>
@@ -96,7 +97,7 @@ export function FirstRunWizard(): ReactElement {
 
         {step === 2 && (
           <>
-            <h2 style={{ marginTop: 0 }}>Runtime model selection</h2>
+            <h2 style={{ marginTop: 0 }}>{L('Runtime model selection')}</h2>
             {useDemo ? (
               <p className="muted">
                 Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.
@@ -130,7 +131,7 @@ export function FirstRunWizard(): ReactElement {
 
         {step === 3 && (
           <>
-            <h2 style={{ marginTop: 0 }}>Permissions</h2>
+            <h2 style={{ marginTop: 0 }}>{L('Permissions')}</h2>
             <div className="card">
               {(['SAFE', 'BALANCED', 'ADVANCED'] as PermissionMode[]).map((m) => (
                 <label key={m} className="check" style={{ marginBottom: 6 }}>
@@ -151,7 +152,7 @@ export function FirstRunWizard(): ReactElement {
 
         {step === 4 && (
           <>
-            <h2 style={{ marginTop: 0 }}>Performance profile</h2>
+            <h2 style={{ marginTop: 0 }}>{L('Performance profile')}</h2>
             <div className="card">
               {(['LOW_RESOURCE', 'BALANCED', 'PERFORMANCE'] as ResourceMode[]).map((m) => (
                 <label key={m} className="check" style={{ marginBottom: 6 }}>
@@ -172,15 +173,15 @@ export function FirstRunWizard(): ReactElement {
 
         <div className="row" style={{ marginTop: 20, justifyContent: 'space-between' }}>
           <button className="ghost" disabled={step === 0} onClick={() => setStep(step - 1)}>
-            ← Back
+            ← {L('Back')}
           </button>
           {step < steps - 1 ? (
             <button className="primary" onClick={next}>
-              Continue →
+              {L('Continue →')}
             </button>
           ) : (
             <button className="primary" onClick={() => void finish()}>
-              Start using the app
+              {L('Start using the app')}
             </button>
           )}
         </div>

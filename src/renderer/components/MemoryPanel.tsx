@@ -1,5 +1,6 @@
 /** Memory review — §16/§18: candidates need confirmation, everything inspectable and deletable. */
 import { type ReactElement, useState } from 'react';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 export function MemoryPanel(): ReactElement {
@@ -9,9 +10,9 @@ export function MemoryPanel(): ReactElement {
   const stored = s.memory.filter((m) => m.status === 'stored');
   return (
     <div className="panel">
-      <h2>Memory</h2>
+      <h2>{L('Memory')}</h2>
       <p className="sub">
-        Stable preferences, facts and verified task outcomes. Nothing is stored silently — candidates appear here first.
+        {L('Stable preferences, facts and verified task outcomes. Nothing is stored silently — candidates appear here first.')}
       </p>
 
       <div className="card">

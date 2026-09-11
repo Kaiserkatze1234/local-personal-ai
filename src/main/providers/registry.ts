@@ -134,6 +134,16 @@ export class ProviderRegistry {
     return out;
   }
 
+  /** Remove a provider (extension lifecycle). Models go with it. */
+  unregisterProvider(providerId: string): boolean {
+    const p = this.providers.get(providerId);
+    if (!p) return false;
+    this.store.run(`DELETE FROM models WHERE provider_id = ?`, providerId);
+    this.store.run(`DELETE FROM providers WHERE id = ?`, providerId);
+    this.providers.delete(providerId);
+    return true;
+  }
+
   /** Resolve the chat contract for a model id; throws honestly if absent (§3.8). */
   chatFor(modelId: string): { provider: RegisteredProvider; model: ModelInfo } {
     const found = this.findModel(modelId);

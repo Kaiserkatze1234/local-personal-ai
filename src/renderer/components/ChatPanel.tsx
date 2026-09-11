@@ -6,6 +6,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import type { PromptSuggestion } from '../../shared/types/events.js';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -149,7 +150,7 @@ export function ChatPanel(): ReactElement {
       <div className="chat-scroll scroll" ref={scrollRef}>
         {s.messages.length === 0 ? (
           <div className="empty-chat">
-            <h1>What should we do?</h1>
+            <h1>{L('What should we do?')}</h1>
             <div>
               <span className="muted">Local-first · your model · your machine</span>
             </div>
@@ -173,10 +174,10 @@ export function ChatPanel(): ReactElement {
                       <button
                         className="ghost"
                         style={{ padding: '2px 6px', fontSize: 11 }}
-                        title="read aloud (needs TTS backend)"
+                        title={L('read aloud (needs TTS backend)')}
                         onClick={() => speak(String(m.content))}
                       >
-                        🔊 speak
+                        {L('🔊 speak')}
                       </button>
                     </div>
                   )}
@@ -228,8 +229,8 @@ export function ChatPanel(): ReactElement {
               value={draft}
               placeholder={
                 s.mode === 'CHAT'
-                  ? 'Ask anything… (Enter to send, Shift+Enter for newline)'
-                  : 'Describe the task… e.g. "find why the build fails, fix it and verify"'
+                  ? L('Ask anything… (Enter to send, Shift+Enter for newline)')
+                  : L('Describe the task… e.g. "find why the build fails, fix it and verify"')
               }
               rows={Math.min(6, Math.max(2, draft.split('\n').length))}
               onChange={(e) => {
@@ -243,11 +244,11 @@ export function ChatPanel(): ReactElement {
                 }
               }}
             />
-            <button title="attach current screen (needs a vision-capable model)" onClick={() => void capture()}>
+            <button title={L('attach current screen (needs a vision-capable model)')} onClick={() => void capture()}>
               📷
             </button>
             <button
-              title="attach a screen region (drag to select)"
+              title={L('attach a screen region (drag to select)')}
               onClick={() =>
                 void (async () => {
                   try {
@@ -262,7 +263,7 @@ export function ChatPanel(): ReactElement {
               🎯
             </button>
             <button
-              title="analyze a screen recording (needs ffmpeg + vision model)"
+              title={L('analyze a screen recording (needs ffmpeg + vision model)')}
               onClick={() =>
                 void (async () => {
                   stopSpeech();
@@ -287,11 +288,11 @@ export function ChatPanel(): ReactElement {
             </button>
             {s.sending ? (
               <button className="danger" onClick={() => void s.cancelChat()}>
-                Stop
+                {L('Stop')}
               </button>
             ) : (
               <button className="primary" disabled={!draft.trim()} onClick={() => void onSend()}>
-                Send
+                {L('Send')}
               </button>
             )}
           </div>

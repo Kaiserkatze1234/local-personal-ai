@@ -1,6 +1,7 @@
 /** Learned workflows — §18/§19: reviewable, toggleable, removable. */
 import { type ReactElement, useState } from 'react';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 export function SkillsPanel(): ReactElement {
@@ -10,8 +11,8 @@ export function SkillsPanel(): ReactElement {
   const manual = s.skills.filter((k) => k.source !== 'learned');
   return (
     <div className="panel">
-      <h2>Skills</h2>
-      <p className="sub">Reusable procedures — learned from confirmed workflows or added by you. Skills never bypass permissions.</p>
+      <h2>{L('Skills')}</h2>
+      <p className="sub">{L('Reusable procedures — learned from confirmed workflows or added by you. Skills never bypass permissions.')}</p>
       {learned.length > 0 && (
         <div className="card">
           <h3>Learned from your corrections</h3>

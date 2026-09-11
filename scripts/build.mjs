@@ -54,3 +54,10 @@ run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+// --- copy window/tray icon resource next to the built renderer ---
+import { copyFileSync as cp, existsSync as ex, mkdirSync as md } from 'node:fs';
+
+md('dist/resources', { recursive: true });
+if (ex('build/icon.png')) cp('build/icon.png', 'dist/resources/icon.png');
+console.log('[build] resources copied');

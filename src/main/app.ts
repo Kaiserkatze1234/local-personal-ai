@@ -76,6 +76,10 @@ export interface HostBindings {
   /** Desktop overlay window controls (Electron host, Phase 12). */
   overlayShow?: () => void;
   overlayHide?: () => void;
+  /** Reveal a file in the OS file manager (export flows). */
+  reveal?: (path: string) => void;
+  /** Toggle Windows autostart immediately in addition to config. */
+  setAutostart?: (on: boolean) => void;
   /** Region picker: shows a fullscreen selection window, resolves with the chosen rect. */
   pickRegion?: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
   /** Delivers the region window's result (via api 'region.submit') back to the host. */
@@ -113,6 +117,8 @@ export class CoreApp {
   readonly proactive: ProactiveService;
   readonly extensions: ExtensionRegistry;
   extensionsDir: string = '';
+  /** Data dir (logs, exports) — surfaced for diagnostics tooling. */
+  dataDirPath = '';
   readonly vision: VisionService;
   readonly recordings: RecordingAnalysisService;
   readonly voice: VoiceService;
@@ -206,8 +212,9 @@ export class CoreApp {
     });
     // always registered; each tool gates itself on Settings → Internet (§49)
     registerWebTools(this.tools, this.config);
-    this.extensions = new ExtensionRegistry(this.tools, this.permissions, sub('ext'));
+    this.extensions = new ExtensionRegistry(this.tools, this.permissions, sub('ext'), this.providers);
     this.extensionsDir = join(opts.dataDir, 'extensions');
+    this.dataDirPath = opts.dataDir;
 
     this.memory = new MemoryService(memoryRepo, this.config, this.bus, sub('memory'));
     this.skills = new SkillService(skillRepo, learningRepo, sub('skills'));

@@ -111,6 +111,8 @@ export interface InvokeContract {
   'projects.reindex': { args: [id: string]; res: boolean };
   'checkpoints.list': { args: []; res: CheckpointInfo[] };
   'checkpoints.restore': { args: [id: string]; res: { ok: boolean; message: string } };
+  'diagnostics.logs': { args: [maxLines?: number]; res: { text: string; lines: number } };
+  'diagnostics.reveal': { args: [path: string]; res: { ok: boolean; error?: string } };
   'diagnostics.health': { args: []; res: HealthReport };
   'diagnostics.selfTest': { args: []; res: HealthReport };
   'diagnostics.export': { args: []; res: { path: string } };
@@ -124,6 +126,7 @@ export interface InvokeContract {
   'recording.pickAndAnalyze': { args: [question?: string]; res: { ok: boolean; summary?: string; error?: string; cancelled?: boolean } };
   'voice.transcribe': { args: [audioBase64: string, mimeType: string]; res: { text: string; confidence?: number } };
   'voice.speak': { args: [text: string]; res: { audioBase64: string; mimeType: string } };
+  'extensions.panels': { args: []; res: { id: string; title: string; markdown: string }[] };
   'extensions.list': {
     args: [];
     res: { id: string; name: string; version: string; description?: string; active: boolean; error?: string; contributedTools: string[] }[];

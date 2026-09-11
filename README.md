@@ -27,6 +27,8 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 - **German-first**: the AI answers in German by default (`general.language`,
   mirrors the user otherwise); whisper.cpp and OpenAI-compatible TTS speak and
   listen locally; screen recordings and PDF/DOCX documents are ingestable.
+- **Windows desktop behaviour**: autostart (optional), start-hidden to tray,
+  close-to-tray, tray menu, global hotkeys, λ app icon in window/tray/installer.
 - **Extensions** with validated manifests (capabilities, permissions,
   dependencies) can contribute tools and file importers without core edits.
 - **Dictation & speech**: push-to-talk hotkey fills the composer, 🔊 reads
@@ -87,3 +89,10 @@ Recommended starting point on a mid-range Windows box: an 8B-class
 tool-calling chat model + a small (1–3B) assistant model, via Ollama;
 `qwen2.5-coder:7b` for coding work. Demo/mock provider exists for UI
 testing and is always labeled as not real AI.
+
+## Running on Windows
+
+1. Install [Node.js 20+](https://nodejs.org) and (recommended) [Ollama](https://ollama.com) with a model, e.g. `ollama pull qwen2.5-coder:7b`.
+2. Dev mode: `npm install` → `npm run dev` (Electron + Vite with hot reload).
+3. Installer: `npm run dist` → `release/Local Personal AI-Setup-*.exe` (x64/ARM64) or the portable `.exe`.
+4. First start walks you through provider detection, model choice, permissions and performance profile. Data lives in `%APPDATA%/lpai` — delete that folder for a full reset; nothing else is written.

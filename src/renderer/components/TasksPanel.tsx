@@ -1,6 +1,7 @@
 /** Task transparency — §9/§3.7: every run shows phases, tools, model choice. */
 import type { ReactElement } from 'react';
 import type { TaskRecord } from '../../shared/types/task.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 function TaskCard({ t }: { t: TaskRecord }): ReactElement {
@@ -24,9 +25,9 @@ function TaskCard({ t }: { t: TaskRecord }): ReactElement {
         )}
         {t.status === 'paused' && (
           <>
-            <button onClick={() => void s.recoverTask(t.id, 'rerun')}>Resume (rerun)</button>
+            <button onClick={() => void s.recoverTask(t.id, 'rerun')}>{L('Resume (rerun)')}</button>
             <button className="ghost" onClick={() => void s.recoverTask(t.id, 'discard')}>
-              Discard
+              {L('Discard')}
             </button>
           </>
         )}
@@ -89,9 +90,11 @@ export function TasksPanel(): ReactElement {
   const sorted = [...s.tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return (
     <div className="panel">
-      <h2>Tasks</h2>
-      <p className="sub">Every agent action is a recoverable task with visible phases. {s.tasks.length} record(s).</p>
-      {sorted.length === 0 && <div className="card muted">No tasks yet — switch to Agent or Coding mode and ask for something.</div>}
+      <h2>{L('Tasks')}</h2>
+      <p className="sub">
+        {L('Every agent action is a recoverable task with visible phases.')} {s.tasks.length} record(s).
+      </p>
+      {sorted.length === 0 && <div className="card muted">{L('No tasks yet — switch to Agent or Coding mode and ask for something.')}</div>}
       {sorted.map((t) => (
         <TaskCard key={t.id} t={t} />
       ))}

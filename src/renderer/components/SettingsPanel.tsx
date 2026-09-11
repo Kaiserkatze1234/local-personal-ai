@@ -5,6 +5,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { ModelRole, PermissionMode, ResourceMode } from '../../shared/types/capabilities.js';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 const ROLES: ModelRole[] = [
@@ -51,7 +52,7 @@ export function SettingsPanel(): ReactElement {
 
       <div className="settings-grid">
         <div className="card">
-          <h3>AI — providers</h3>
+          <h3>{L('AI — providers')}</h3>
           {s.providers.map((p) => (
             <div key={p.id} className="row" style={{ marginBottom: 6 }}>
               <span className={`dot ${p.health.state === 'OK' ? 'ok' : p.health.state === 'WARNING' ? 'warn' : 'err'}`} />
@@ -71,7 +72,7 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>AI — model roles (routing)</h3>
+          <h3>{L('AI — model roles (routing)')}</h3>
           <div className="kv">
             {ROLES.map((role) => (
               <Field key={role} label={role.replace('_', ' ')}>
@@ -91,7 +92,7 @@ export function SettingsPanel(): ReactElement {
               </Field>
             ))}
           </div>
-          <Field label="temperature">
+          <Field label={L('temperature')}>
             <input
               type="number"
               step={0.1}
@@ -102,14 +103,14 @@ export function SettingsPanel(): ReactElement {
             />
           </Field>
           <div className="row" style={{ marginTop: 8 }}>
-            <Field label="chat context (tokens)">
+            <Field label={L('chat context (tokens)')}>
               <input
                 type="number"
                 value={cfg.ai.contextTokenBudget}
                 onChange={(e) => patch({ ai: { contextTokenBudget: Number(e.target.value) } })}
               />
             </Field>
-            <Field label="agent context (tokens)">
+            <Field label={L('agent context (tokens)')}>
               <input
                 type="number"
                 value={cfg.ai.agentContextTokenBudget}
@@ -120,8 +121,8 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Tools — permissions & scope</h3>
-          <Field label="permission mode">
+          <h3>{L('Tools — permissions & scope')}</h3>
+          <Field label={L('permission mode')}>
             <select
               value={cfg.tools.permissionMode}
               onChange={(e) => {
@@ -134,7 +135,7 @@ export function SettingsPanel(): ReactElement {
               <option value="ADVANCED">ADVANCED — broad automation, dangerous still gated</option>
             </select>
           </Field>
-          <Field label="writable roots (one per line)">
+          <Field label={L('writable roots (one per line)')}>
             <textarea
               rows={3}
               value={roots}
@@ -161,7 +162,7 @@ export function SettingsPanel(): ReactElement {
               Hint
             </button>
           </div>
-          <Field label="command timeout (seconds)">
+          <Field label={L('command timeout (seconds)')}>
             <input
               type="number"
               value={cfg.tools.commandTimeoutSec}
@@ -194,7 +195,7 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Memory & learning</h3>
+          <h3>{L('Memory & learning')}</h3>
           <label className="check">
             <input type="checkbox" checked={cfg.memory.enabled} onChange={(e) => patch({ memory: { enabled: e.target.checked } })} /> enable
             long-term memory
@@ -204,18 +205,18 @@ export function SettingsPanel(): ReactElement {
               type="checkbox"
               checked={cfg.memory.requireReview}
               onChange={(e) => patch({ memory: { requireReview: e.target.checked } })}
-            />{' '}
-            new memories need my confirmation
+            />
+            {L('new memories need my confirmation')}
           </label>
           <label className="check">
             <input
               type="checkbox"
               checked={cfg.memory.compressionEnabled}
               onChange={(e) => patch({ memory: { compressionEnabled: e.target.checked } })}
-            />{' '}
-            auto-compress / dedupe memory
+            />
+            {L('auto-compress / dedupe memory')}
           </label>
-          <Field label="episode retention (days, 0 = keep)">
+          <Field label={L('episode retention (days, 0 = keep)')}>
             <input
               type="number"
               value={cfg.memory.retentionDays}
@@ -225,7 +226,7 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Vision / screen / voice</h3>
+          <h3>{L('Vision / screen / voice')}</h3>
           <label className="check">
             <input type="checkbox" checked={cfg.vision.enabled} onChange={(e) => patch({ vision: { enabled: e.target.checked } })} /> vision
             (screenshot analysis)
@@ -235,28 +236,28 @@ export function SettingsPanel(): ReactElement {
               type="checkbox"
               checked={cfg.vision.persistScreenshots}
               onChange={(e) => patch({ vision: { persistScreenshots: e.target.checked } })}
-            />{' '}
-            keep screenshots on disk (off = ephemeral)
+            />
+            {L('keep screenshots on disk (off = ephemeral)')}
           </label>
           <label className="check">
             <input type="checkbox" checked={cfg.voice.enabled} onChange={(e) => patch({ voice: { enabled: e.target.checked } })} /> voice
             I/O (requires STT/TTS provider)
           </label>
-          <Field label="STT base URL (whisper.cpp server)">
+          <Field label={L('STT base URL (whisper.cpp server)')}>
             <input
               value={cfg.voice.sttBaseUrl ?? ''}
               onChange={(e) => patch({ voice: { sttBaseUrl: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
               placeholder="http://127.0.0.1:8080"
             />
           </Field>
-          <Field label="TTS base URL (OpenAI-compatible /v1/audio/speech)">
+          <Field label={L('TTS base URL (OpenAI-compatible /v1/audio/speech)')}>
             <input
               value={cfg.voice.ttsBaseUrl ?? ''}
               onChange={(e) => patch({ voice: { ttsBaseUrl: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
               placeholder="http://127.0.0.1:5000"
             />
           </Field>
-          <Field label="TTS voice id (backend-specific; empty = default)">
+          <Field label={L('TTS voice id (backend-specific; empty = default)')}>
             <input
               value={cfg.voice.voiceName ?? ''}
               onChange={(e) => patch({ voice: { voiceName: e.target.value.trim() === '' ? null : e.target.value.trim() } })}
@@ -268,7 +269,7 @@ export function SettingsPanel(): ReactElement {
             STT/TTS roles below.
           </div>
           <div className="row">
-            <Field label="dictation hotkey">
+            <Field label={L('dictation hotkey')}>
               <input
                 value={cfg.voice.pushToTalkHotkey}
                 onChange={(e) => patch({ voice: { pushToTalkHotkey: e.target.value } })}
@@ -303,12 +304,12 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Internet (optional layer — core never needs it)</h3>
+          <h3>{L('Internet (optional layer — core never needs it)')}</h3>
           <label className="check">
-            <input type="checkbox" checked={cfg.internet.enabled} onChange={(e) => patch({ internet: { enabled: e.target.checked } })} />{' '}
-            allow http_get / web_search tools
+            <input type="checkbox" checked={cfg.internet.enabled} onChange={(e) => patch({ internet: { enabled: e.target.checked } })} />
+            {L('allow http_get / web_search tools')}
           </label>
-          <Field label="allowed hosts (one per line; empty = any https)">
+          <Field label={L('allowed hosts (one per line; empty = any https)')}>
             <textarea
               rows={2}
               defaultValue={cfg.internet.allowedHosts.join('\n')}
@@ -324,7 +325,7 @@ export function SettingsPanel(): ReactElement {
               }
             />
           </Field>
-          <Field label="max response size (KB)">
+          <Field label={L('max response size (KB)')}>
             <input
               type="number"
               value={cfg.internet.maxResponseKB}
@@ -337,17 +338,17 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Overlay & prompt assistant</h3>
+          <h3>{L('Overlay & prompt assistant')}</h3>
           <label className="check">
-            <input type="checkbox" checked={cfg.overlay.enabled} onChange={(e) => patch({ overlay: { enabled: e.target.checked } })} />{' '}
-            desktop overlay enabled
+            <input type="checkbox" checked={cfg.overlay.enabled} onChange={(e) => patch({ overlay: { enabled: e.target.checked } })} />
+            {L('desktop overlay enabled')}
           </label>
           <div className="row">
             <button onClick={() => void s.toggleOverlay(true)}>Show overlay</button>
             <button onClick={() => void s.toggleOverlay(false)}>Hide overlay</button>
           </div>
           <div className="row">
-            <Field label="position">
+            <Field label={L('position')}>
               <select
                 value={cfg.overlay.position}
                 onChange={(e) =>
@@ -371,7 +372,7 @@ export function SettingsPanel(): ReactElement {
               />
             </Field>
           </div>
-          <Field label="hotkey (toggle overlay)">
+          <Field label={L('hotkey (toggle overlay)')}>
             <input value={cfg.overlay.hotkey} onChange={(e) => patch({ overlay: { hotkey: e.target.value } })} placeholder="Ctrl+Alt+O" />
           </Field>
           <label className="check">
@@ -379,30 +380,30 @@ export function SettingsPanel(): ReactElement {
               type="checkbox"
               checked={cfg.overlay.lowResourceMode}
               onChange={(e) => patch({ overlay: { lowResourceMode: e.target.checked } })}
-            />{' '}
-            gaming mode: click-through, display-only, never takes focus
+            />
+            {L('gaming mode: click-through, display-only, never takes focus')}
           </label>
           <label className="check" style={{ marginTop: 8 }}>
             <input
               type="checkbox"
               checked={cfg.promptAssistant.enabled}
               onChange={(e) => patch({ promptAssistant: { enabled: e.target.checked } })}
-            />{' '}
-            prompt assistant (while typing)
+            />
+            {L('prompt assistant (while typing)')}
           </label>
           <label className="check">
             <input
               type="checkbox"
               checked={cfg.promptAssistant.useModel}
               onChange={(e) => patch({ promptAssistant: { useModel: e.target.checked } })}
-            />{' '}
-            allow small model pass (debounced)
+            />
+            {L('allow small model pass (debounced)')}
           </label>
         </div>
 
         <div className="card">
-          <h3>Performance</h3>
-          <Field label="resource mode">
+          <h3>{L('Performance')}</h3>
+          <Field label={L('resource mode')}>
             <select
               value={cfg.performance.mode}
               onChange={(e) => {
@@ -419,18 +420,18 @@ export function SettingsPanel(): ReactElement {
               type="checkbox"
               checked={cfg.performance.autoSwitch}
               onChange={(e) => patch({ performance: { autoSwitch: e.target.checked } })}
-            />{' '}
-            auto-switch under pressure
+            />
+            {L('auto-switch under pressure')}
           </label>
           <label className="check">
             <input
               type="checkbox"
               checked={cfg.performance.pauseIndexingDuringGeneration}
               onChange={(e) => patch({ performance: { pauseIndexingDuringGeneration: e.target.checked } })}
-            />{' '}
-            pause indexing while generating
+            />
+            {L('pause indexing while generating')}
           </label>
-          <Field label="background concurrency (1-4)">
+          <Field label={L('background concurrency (1-4)')}>
             <input
               type="number"
               min={1}
@@ -439,7 +440,7 @@ export function SettingsPanel(): ReactElement {
               onChange={(e) => patch({ performance: { backgroundConcurrency: Number(e.target.value) } })}
             />
           </Field>
-          <Field label="unload idle models after (minutes, 0=never)">
+          <Field label={L('unload idle models after (minutes, 0=never)')}>
             <input
               type="number"
               min={0}
@@ -450,12 +451,12 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Proactive & personality</h3>
+          <h3>{L('Proactive & personality')}</h3>
           <label className="check">
-            <input type="checkbox" checked={cfg.proactive.enabled} onChange={(e) => patch({ proactive: { enabled: e.target.checked } })} />{' '}
-            proactive help (strong reasons only)
+            <input type="checkbox" checked={cfg.proactive.enabled} onChange={(e) => patch({ proactive: { enabled: e.target.checked } })} />
+            {L('proactive help (strong reasons only)')}
           </label>
-          <Field label="min confidence">
+          <Field label={L('min confidence')}>
             <input
               type="number"
               step={0.05}
@@ -466,7 +467,7 @@ export function SettingsPanel(): ReactElement {
             />
           </Field>
           <div className="row">
-            <Field label="verbosity">
+            <Field label={L('verbosity')}>
               <select
                 value={cfg.personality.verbosity}
                 onChange={(e) => patch({ personality: { verbosity: e.target.value as 'concise' | 'balanced' | 'detailed' } })}
@@ -476,7 +477,7 @@ export function SettingsPanel(): ReactElement {
                 <option>detailed</option>
               </select>
             </Field>
-            <Field label="formality">
+            <Field label={L('formality')}>
               <select
                 value={cfg.personality.formality}
                 onChange={(e) => patch({ personality: { formality: e.target.value as 'formal' | 'casual' } })}
@@ -485,7 +486,7 @@ export function SettingsPanel(): ReactElement {
                 <option>casual</option>
               </select>
             </Field>
-            <Field label="depth">
+            <Field label={L('depth')}>
               <select
                 value={cfg.personality.technicalDepth}
                 onChange={(e) => patch({ personality: { technicalDepth: e.target.value as 'simple' | 'standard' | 'deep' } })}
@@ -499,12 +500,12 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Indexing (§31 — opt-in only)</h3>
+          <h3>{L('Indexing (§31 — opt-in only)')}</h3>
           <label className="check">
-            <input type="checkbox" checked={cfg.indexing.enabled} onChange={(e) => patch({ indexing: { enabled: e.target.checked } })} />{' '}
-            global metadata file index
+            <input type="checkbox" checked={cfg.indexing.enabled} onChange={(e) => patch({ indexing: { enabled: e.target.checked } })} />
+            {L('global metadata file index')}
           </label>
-          <Field label="indexed roots (one per line)">
+          <Field label={L('indexed roots (one per line)')}>
             <textarea
               rows={3}
               defaultValue={cfg.indexing.roots.join('\n')}
@@ -526,19 +527,19 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
-          <h3>Extensions (modular capabilities, §42)</h3>
+          <h3>{L('Extensions (modular capabilities, §42)')}</h3>
           <ExtensionsCard />
         </div>
 
         <div className="card">
-          <h3>General</h3>
-          <Field label="language (UI strings will follow this)">
+          <h3>{L('General')}</h3>
+          <Field label={L('language (UI strings will follow this)')}>
             <select value={cfg.general.language} onChange={(e) => patch({ general: { language: e.target.value } })}>
               <option value="de">Deutsch</option>
               <option value="en">English</option>
             </select>
           </Field>
-          <Field label="log level">
+          <Field label={L('log level')}>
             <select
               value={cfg.diagnostics.logLevel}
               onChange={(e) => patch({ diagnostics: { logLevel: e.target.value as 'debug' | 'info' | 'warn' | 'error' } })}
@@ -549,6 +550,27 @@ export function SettingsPanel(): ReactElement {
               <option>error</option>
             </select>
           </Field>
+          <label className="check">
+            <input type="checkbox" checked={cfg.general.autostart} onChange={(e) => patch({ general: { autostart: e.target.checked } })} />{' '}
+            {L('Start with Windows')}
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={cfg.general.startHidden}
+              onChange={(e) => patch({ general: { startHidden: e.target.checked } })}
+            />{' '}
+            {L('Start hidden to tray')}
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={cfg.general.closeToTray}
+              onChange={(e) => patch({ general: { closeToTray: e.target.checked } })}
+            />{' '}
+            {L('Close button minimizes to tray')}
+          </label>
+          <div className="small muted">{L('Autostart, tray and window behaviour apply after restart.')}</div>
         </div>
       </div>
     </div>

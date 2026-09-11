@@ -10,6 +10,10 @@ export interface AppConfig {
     language: string;
     theme: 'dark' | 'light' | 'system';
     startHidden: boolean;
+    /** Register in Windows autostart (Electron login-item API). */
+    autostart: boolean;
+    /** Close button hides to tray instead of quitting (tray appears automatically). */
+    closeToTray: boolean;
   };
   ai: {
     /** Default context budget for chat-style tasks (tokens, estimated). */
@@ -50,8 +54,6 @@ export interface AppConfig {
   };
   voice: {
     enabled: boolean;
-    sttModel: string | null;
-    ttsModel: string | null;
     pushToTalkHotkey: string;
     /** Local server backends (§24 adapters); null = not configured. */
     sttBaseUrl: string | null;
@@ -121,7 +123,7 @@ export interface AppConfig {
 export function defaultConfig(): AppConfig {
   return {
     version: 1,
-    general: { language: 'de', theme: 'dark', startHidden: false },
+    general: { language: 'de', theme: 'dark', startHidden: false, autostart: false, closeToTray: true },
     ai: {
       contextTokenBudget: 6000,
       agentContextTokenBudget: 10000,
@@ -146,8 +148,6 @@ export function defaultConfig(): AppConfig {
     screen: { continuousEnabled: false, intervalMs: 5000 },
     voice: {
       enabled: false,
-      sttModel: null,
-      ttsModel: null,
       pushToTalkHotkey: 'Ctrl+Alt+V',
       speed: 1,
       volume: 1,

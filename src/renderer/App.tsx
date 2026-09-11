@@ -10,9 +10,10 @@ import { ProjectsPanel } from './components/ProjectsPanel.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
 import { SkillsPanel } from './components/SkillsPanel.js';
 import { TasksPanel } from './components/TasksPanel.js';
+import { L } from './lib/i18n.js';
 import { useStore } from './state/store.js';
 
-type Panel = 'chat' | 'tasks' | 'projects' | 'memory' | 'skills' | 'settings' | 'diagnostics';
+type Panel = 'chat' | 'tasks' | 'projects' | 'memory' | 'skills' | 'settings' | 'diagnostics' | (string & {});
 
 const MODES: { id: AppMode; label: string; title: string }[] = [
   { id: 'CHAT', label: 'Chat', title: 'Conversation — uses your runtime model directly' },
@@ -41,7 +42,7 @@ export function App(): ReactElement {
           <div className="hint">
             {s.error ?? 'Connecting to the local core…'}
             <div style={{ marginTop: 12 }}>
-              <button onClick={() => void s.init()}>Retry</button>
+              <button onClick={() => void s.init()}>{L('Retry')}</button>
             </div>
           </div>
         </div>
@@ -73,17 +74,18 @@ export function App(): ReactElement {
             ['skills', 'Skills', 0],
             ['diagnostics', 'Diagnostics', 0],
             ['settings', 'Settings', 0],
+            ...s.extensionPanels.map((pr) => [`ext:${pr.id}`, pr.title, 0] as [Panel, string, number]),
           ] as [Panel, string, number][]
         ).map(([id, label, badge]) => (
           <button key={id} className={`nav-item ${panel === id ? 'active' : ''}`} onClick={() => setPanel(id)}>
-            <span>{label}</span>
+            <span>{L(label)}</span>
             {badge > 0 && <span className="nav-badge">{badge}</span>}
           </button>
         ))}
         <div className="foot">
           <div className="status-row">
             <span className={`dot ${demoOnly ? 'warn' : 'ok'}`} />
-            <span>{demoOnly ? 'demo model only' : 'runtime model bound'}</span>
+            <span>{L(demoOnly ? 'demo model only' : 'runtime model bound')}</span>
           </div>
           <div className="muted small">{s.info?.version} · local-first</div>
         </div>
@@ -93,8 +95,8 @@ export function App(): ReactElement {
         <div className="topbar">
           <div className="seg" role="tablist">
             {MODES.map((m) => (
-              <button key={m.id} title={m.title} className={s.mode === m.id ? 'on' : ''} onClick={() => s.setMode(m.id)}>
-                {m.label}
+              <button key={m.id} title={L(m.title)} className={s.mode === m.id ? 'on' : ''} onClick={() => s.setMode(m.id)}>
+                {L(m.label)}
               </button>
             ))}
           </div>
@@ -104,7 +106,7 @@ export function App(): ReactElement {
             value={s.activeProjectId ?? ''}
             onChange={(e) => s.setProject(e.target.value || null)}
           >
-            <option value="">No project</option>
+            <option value="">{L('No project')}</option>
             {s.projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -112,7 +114,7 @@ export function App(): ReactElement {
             ))}
           </select>
           <div className="spacer" />
-          {s.sending && <span className="chip on">working…</span>}
+          {s.sending && <span className="chip on">{L('working…')}</span>}
           {pendingPerms > 0 && (
             <span className="chip" style={{ borderColor: 'var(--warn)' }}>
               ⚠ {pendingPerms} permission{pendingPerms > 1 ? 's' : ''}
@@ -131,6 +133,7 @@ export function App(): ReactElement {
           {panel === 'skills' && <SkillsPanel />}
           {panel === 'settings' && <SettingsPanel />}
           {panel === 'diagnostics' && <DiagnosticsPanel />}
+          {panel.startsWith('ext:') && <ExtensionView id={panel.slice(4)} />}
         </div>
       </div>
 
@@ -148,6 +151,18 @@ export function App(): ReactElement {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ExtensionView({ id }: { id: string }): ReactElement {
+  const s = useStore();
+  const p = s.extensionPanels.find((x) => x.id === id);
+  if (!p) return <div className="panel muted">{L('no extensions')}</div>;
+  return (
+    <div className="panel">
+      <h2>{p.title}</h2>
+      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.55 }}>{p.markdown}</pre>
     </div>
   );
 }

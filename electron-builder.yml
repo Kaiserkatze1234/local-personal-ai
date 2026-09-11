@@ -1,7 +1,7 @@
 # electron-builder config — Phase 16 (Windows installer)
 # Docs: https://www.electron.build — run via `npm run dist` on Windows.
-# NOTE: drop a real 256x256 multi-size icon at build/icon.ico before shipping;
-# electron-builder falls back to the default Electron icon otherwise.
+# Icons are generated + committed: build/icon.ico (installer) and build/icon.png
+# (window + tray, copied to dist/resources by scripts/build.mjs).
 appId: ai.local.personalai
 productName: Local Personal AI
 directories:

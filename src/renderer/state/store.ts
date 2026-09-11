@@ -47,6 +47,7 @@ interface AppState {
   skills: Skill[];
   projects: ProjectInfo[];
   health: HealthReport | null;
+  extensionPanels: { id: string; title: string; markdown: string }[];
   notices: ProactiveSuggestion[];
   error: string | null;
 
@@ -76,6 +77,7 @@ interface AppState {
   reindexProject(id: string): Promise<void>;
   removeProject(id: string): Promise<void>;
   refreshHealth(): Promise<void>;
+  refreshExtensionPanels(): Promise<void>;
   runSelfTest(): Promise<void>;
   exportDiagnostics(): Promise<void>;
   setResourceMode(mode: 'LOW_RESOURCE' | 'BALANCED' | 'PERFORMANCE' | 'auto'): Promise<void>;
@@ -111,6 +113,7 @@ export const useStore = create<AppState>((set, get) => ({
   skills: [],
   projects: [],
   health: null,
+  extensionPanels: [],
   notices: [],
   error: null,
 
@@ -131,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (first) await get().openConversation(first.id);
       else set({ activeConvId: null, messages: [] });
       await get().refreshHealth();
+      await get().refreshExtensionPanels();
     } catch (err) {
       set({ connected: false, error: err instanceof api.ApiError ? err.message : String(err) });
     }
@@ -329,6 +333,13 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ projects: s.projects.filter((p) => p.id !== id), activeProjectId: s.activeProjectId === id ? null : s.activeProjectId }));
   },
 
+  async refreshExtensionPanels() {
+    try {
+      set({ extensionPanels: await api.call('extensions.panels') });
+    } catch {
+      /* no bridge */
+    }
+  },
   async refreshHealth() {
     try {
       const health = await api.call('diagnostics.health');

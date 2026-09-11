@@ -1,5 +1,6 @@
 /** Confirmation dialog for tool actions (§11) — shows exactly what will happen. */
 import type { ReactElement } from 'react';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 export function PermissionDialog(): ReactElement | null {
@@ -10,7 +11,7 @@ export function PermissionDialog(): ReactElement | null {
     <div className="modal-wrap">
       <div className="modal">
         {req.flaggedDangerous && <div className="danger-flag">⚠ flagged as potentially destructive</div>}
-        <h3 style={{ marginTop: 0 }}>Permission needed</h3>
+        <h3 style={{ marginTop: 0 }}>{L('Permission needed')}</h3>
         <div className="kv">
           <div className="muted">permission</div>
           <div className="mono">{req.permission}</div>
@@ -22,11 +23,11 @@ export function PermissionDialog(): ReactElement | null {
           </div>
         </div>
         <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
-          <button onClick={() => void s.decidePermission(req.id, 'deny')}>Deny</button>
-          <button onClick={() => void s.decidePermission(req.id, 'allow_once')}>Allow once</button>
-          <button onClick={() => void s.decidePermission(req.id, 'allow_session')}>Allow for session</button>
+          <button onClick={() => void s.decidePermission(req.id, 'deny')}>{L('Deny')}</button>
+          <button onClick={() => void s.decidePermission(req.id, 'allow_once')}>{L('Allow once')}</button>
+          <button onClick={() => void s.decidePermission(req.id, 'allow_session')}>{L('Allow for session')}</button>
           <button className="primary" onClick={() => void s.decidePermission(req.id, 'allow_persistent')}>
-            Always allow
+            {L('Allow always')}
           </button>
         </div>
         {s.permissionQueue.length > 1 && (

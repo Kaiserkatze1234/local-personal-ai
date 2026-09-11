@@ -1,6 +1,7 @@
 /** Project + knowledge panel — §13/§31/§62. Explicit opt-in indexing. */
 import { type ReactElement, useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 interface KnowledgeDoc {
@@ -28,7 +29,7 @@ export function ProjectsPanel(): ReactElement {
 
   return (
     <div className="panel">
-      <h2>Projects & knowledge</h2>
+      <h2>{L('Projects & knowledge')}</h2>
       <p className="sub">
         The AI only sees what you add here. Directories are indexed incrementally (metadata + previews), never uploaded anywhere.
       </p>

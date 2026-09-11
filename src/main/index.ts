@@ -5,8 +5,22 @@
  */
 
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, screen, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  Notification,
+  nativeImage,
+  screen,
+  session,
+  shell,
+  Tray,
+} from 'electron';
 import { APP_ID, APP_NAME, DATA_DIR_ENV, DEV_SERVER_ENV } from '../shared/constants.js';
+import { tr } from '../shared/i18n.js';
 import type { AppEvent } from '../shared/types/events.js';
 import { Api } from './api.js';
 import { CoreApp, type HostBindings } from './app.js';
@@ -18,6 +32,19 @@ const gotLock = app.requestSingleInstanceLock({ id: 'main' });
 let core: CoreApp | null = null;
 let mainWindow: BrowserWindow | null = null;
 let overlay: OverlayController | null = null;
+let tray: Tray | null = null;
+let appQuitting = false;
+let createWindowRef: (() => void) | null = null;
+
+function showMain(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindowRef?.();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
 
 function broadcast(event: AppEvent): void {
   for (const w of BrowserWindow.getAllWindows()) {
@@ -40,7 +67,10 @@ async function boot(): Promise<void> {
     hostName: APP_NAME,
     sendToUi: broadcast,
     notify: (title, body) => {
-      if (Notification.isSupported()) new Notification({ title, body }).show();
+      if (!Notification.isSupported()) return;
+      const n = new Notification({ title, body });
+      n.addListener('click', () => showMain());
+      n.show();
     },
     screenSource: createElectronScreenSource(),
     pickDirectory: async () => {
@@ -53,6 +83,16 @@ async function boot(): Promise<void> {
     },
     overlayShow: () => overlay?.show(),
     overlayHide: () => overlay?.hide(),
+    reveal: (p) => {
+      try {
+        shell.showItemInFolder(p);
+      } catch {
+        /* path may not exist yet */
+      }
+    },
+    setAutostart: (on) => {
+      app.setLoginItemSettings({ openAtLogin: on, args: [] });
+    },
     pickRegion: () => regionPicker.open(),
     onRegionResult: (rect) => regionPicker.deliver(rect),
   };
@@ -105,33 +145,87 @@ async function boot(): Promise<void> {
   const api = new Api(core);
   ipcMain.handle('lpai:invoke', async (_ev, method: string, args: unknown[] = []) => api.handleRaw(method, args));
 
-  mainWindow = new BrowserWindow({
-    width: 1380,
-    height: 900,
-    minWidth: 980,
-    minHeight: 620,
-    backgroundColor: '#0d1017',
-    show: false,
-    autoHideMenuBar: true,
-    title: APP_NAME,
-    webPreferences: {
-      preload: join(app.getAppPath(), 'dist', 'preload', 'index.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  });
-  // Windows: notifications silently fail without an AppUserModelID
-  app.setAppUserModelId(APP_ID);
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
-  if (devUrl) void mainWindow.loadURL(devUrl);
-  else void mainWindow.loadFile(join(rendererDir, 'index.html'));
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  createWindowRef = () => {
+    mainWindow = new BrowserWindow({
+      width: 1380,
+      height: 900,
+      minWidth: 980,
+      minHeight: 620,
+      backgroundColor: '#0d1017',
+      show: false,
+      autoHideMenuBar: true,
+      title: APP_NAME,
+      icon: join(app.getAppPath(), 'dist', 'resources', 'icon.png'),
+      webPreferences: {
+        preload: join(app.getAppPath(), 'dist', 'preload', 'index.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    });
+    // Windows: notifications silently fail without an AppUserModelID
+    app.setAppUserModelId(APP_ID);
+    mainWindow.once('ready-to-show', () => {
+      // §47 startup behaviour: startHidden keeps the window in the tray
+      if (!core?.getConfig().general.startHidden) showMain();
+    });
+    if (devUrl) void mainWindow.loadURL(devUrl);
+    else void mainWindow.loadFile(join(rendererDir, 'index.html'));
+    mainWindow.on('close', (e) => {
+      const cfg = core?.getConfig();
+      if (!appQuitting && cfg?.general.closeToTray && tray && !tray.isDestroyed()) {
+        e.preventDefault(); // hide instead of quit — restorable from tray
+        mainWindow?.hide();
+      }
+    });
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+  };
+  createWindowRef();
+
+  // ---- tray (§47 startup behavior: hidden start / close-to-tray) ----
+  const needTray = () => {
+    const cfg = core?.getConfig();
+    return Boolean(cfg && (cfg.general.startHidden || cfg.general.closeToTray));
+  };
+  const buildTray = (): void => {
+    if (tray && !tray.isDestroyed()) return;
+    if (!needTray()) return;
+    const iconPath = join(app.getAppPath(), 'dist', 'resources', 'icon.png');
+    const img = nativeImage.createFromPath(iconPath);
+    if (img.isEmpty()) {
+      core?.log.child('host').warn('tray icon missing (dist/resources/icon.png) — tray disabled');
+      return;
+    }
+    tray = new Tray(img.resize({ width: 16, height: 16 }));
+    const lang = () => core?.getConfig().general.language ?? 'en';
+    tray.setToolTip(APP_NAME);
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: tr(lang(), 'Open'), click: () => showMain() },
+        { label: tr(lang(), 'Show/hide overlay'), click: () => (overlay?.active ? overlay.hide() : overlay?.show()) },
+        { type: 'separator' },
+        {
+          label: tr(lang(), 'Quit'),
+          click: () => {
+            appQuitting = true;
+            app.quit();
+          },
+        },
+      ]),
+    );
+    tray.addListener('click', () => (mainWindow?.isVisible() ? mainWindow.focus() : showMain()));
+  };
+  buildTray();
+  core.config.onChange(() => buildTray());
+
+  // Windows autostart registration (HKCU Run) follows the config
+  app.setLoginItemSettings({ openAtLogin: core.getConfig().general.autostart, args: [] });
 
   // graceful shutdown: flush config + task state
   app.on('before-quit', (e) => {
+    appQuitting = true;
     if (core) {
       e.preventDefault();
       const c = core;
@@ -156,12 +250,7 @@ if (!gotLock) {
       app.exit(1);
     });
 
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', () => showMain());
 
   process.on('unhandledRejection', (reason) => {
     console.error('[unhandledRejection]', reason);

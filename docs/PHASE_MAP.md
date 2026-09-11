@@ -36,6 +36,23 @@ Windows/desktop runtime or external service to exercise.
 - **§56 Idle unload**, **§21 region capture**, **§24 dictation UI**,
   **§23 overlay hotkey/modes**, **§15 bounded repair**, batched index writes.
 
+## Fourth build pass — German-first UI + desktop completeness
+
+- **German UI chrome (§47 language):** renderer strings flow through
+  `shared/i18n.ts` (English-keyed dictionary, `de` default, graceful fallback).
+  The AI reply language (system prompt) and the UI now follow the same setting.
+- **Startup behavior (§47):** `autostart` (Windows login item), `startHidden`
+  (window starts in tray), `closeToTray` (X hides instead of quitting) — with
+  tray menu (Open / Overlay / Beenden), tray icon included in build output.
+- **§42 completeness:** extensions can now also contribute **UI panels**
+  (`ctx.addPanel`) and **providers** (`ctx.addModelProvider`, registered +
+  refreshed live, removed on uninstall) — matching the spec's category list
+  (providers, tools, importers, skills, UI panels, voice, vision).
+- **§50/§52:** recent-log tail in the Diagnostics panel, "open log folder" /
+  "open export location" reveals (honest in headless mode).
+- **Windows icons:** λ icon generated at `build/icon.png|ico` (multi-size),
+  wired into BrowserWindow, Tray, and the installer.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

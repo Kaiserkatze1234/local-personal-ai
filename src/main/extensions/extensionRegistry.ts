@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { ModelProviderAdapter } from '../../shared/types/models.js';
 import type { PermissionId } from '../../shared/types/permissions.js';
 import type { ToolResult } from '../../shared/types/tools.js';
 import { AppError } from '../core/errors.js';
@@ -18,6 +19,7 @@ import type { SubLogger } from '../core/logger.js';
 import type { Importer } from '../files/importers.js';
 import { registerImporter, unregisterImportersByPrefix } from '../files/importers.js';
 import type { PermissionService } from '../permissions/permissionService.js';
+import type { ProviderRegistry } from '../providers/registry.js';
 import type { ToolRegistry } from '../tools/registry.js';
 
 export interface ExtensionManifest {
@@ -35,6 +37,13 @@ export interface ExtensionManifest {
   main?: string;
 }
 
+export interface ExtensionPanel {
+  id: string;
+  extId: string;
+  title: string;
+  markdown: string;
+}
+
 export interface ExtensionContext {
   addTool(tool: {
     name: string;
@@ -45,6 +54,10 @@ export interface ExtensionContext {
     run: (input: Record<string, unknown>, ctx: import('../tools/registry.js').ToolRunContext) => Promise<ToolResult>;
   }): void;
   addImporter(importer: Importer): void;
+  /** §42 "UI panels": a static info panel contributed to the sidebar. */
+  addPanel(panel: { id: string; title: string; markdown: string }): void;
+  /** §42 model/voice/vision providers: register a full provider adapter. */
+  addModelProvider(adapter: ModelProviderAdapter): void;
   notify(text: string): void;
   log: SubLogger;
 }
@@ -79,11 +92,14 @@ export function validateManifest(m: ExtensionManifest): string[] {
 export class ExtensionRegistry {
   private states = new Map<string, ExtensionState>();
   private disposes = new Map<string, () => void>();
+  private panels = new Map<string, ExtensionPanel>();
+  private extProviderIds = new Map<string, string[]>();
 
   constructor(
     private tools: ToolRegistry,
     private permissions: PermissionService,
     private log: SubLogger,
+    private providers?: ProviderRegistry,
   ) {}
 
   list(): ExtensionState[] {
@@ -126,6 +142,19 @@ export class ExtensionRegistry {
       addImporter: (importer) => {
         registerImporter(importer);
         state.contributedImporters++;
+      },
+      addPanel: (panel) => {
+        const id = `${manifest.id}:${panel.id}`;
+        if (this.panels.has(id)) throw AppError.invalidState(`panel "${panel.id}" already contributed by ${manifest.id}`);
+        this.panels.set(id, { id, extId: manifest.id, title: panel.title, markdown: panel.markdown });
+      },
+      addModelProvider: (adapter) => {
+        if (!this.providers) throw AppError.invalidState('provider registration unavailable');
+        this.providers.register(adapter, { kind: `extension:${manifest.id}` });
+        void this.providers.refreshProvider(adapter.id).catch(() => undefined); // discover models now, not just at boot
+        const list = this.extProviderIds.get(manifest.id) ?? [];
+        list.push(adapter.id);
+        this.extProviderIds.set(manifest.id, list);
       },
       notify: (text) => this.log.info(`[${manifest.id}] ${text}`),
       log: this.log,
@@ -198,6 +227,10 @@ export class ExtensionRegistry {
     return { loaded, skipped, errors };
   }
 
+  listPanels(): ExtensionPanel[] {
+    return [...this.panels.values()];
+  }
+
   /** True if the id came from disk and still has its folder (for re-enable UX). */
   hasDiskSource(id: string): boolean {
     return this.states.get(id)?.sourceDir !== undefined;
@@ -216,6 +249,10 @@ export class ExtensionRegistry {
     this.disposes.get(id)?.();
     this.disposes.delete(id);
     for (const toolName of state.contributedTools) this.tools.unregister(toolName);
+    for (const pid of [...this.panels.keys()]) if (this.panels.get(pid)?.extId === id) this.panels.delete(pid);
+    const extProviders = this.extProviderIds.get(id) ?? [];
+    for (const providerId of extProviders) this.providers?.unregisterProvider(providerId);
+    if (extProviders.length > 0) this.extProviderIds.delete(id);
     if (state.contributedImporters > 0) unregisterImportersByPrefix(`${id}:`);
     this.permissions?.revokeSessionGrantsFor(state.manifest.permissions);
     if (state.sourceDir) {

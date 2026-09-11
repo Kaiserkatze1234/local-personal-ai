@@ -234,6 +234,20 @@ export class Api {
       case 'checkpoints.restore':
         return app.checkpoints.restore(String(args[0]));
 
+      case 'diagnostics.logs': {
+        const { readFileSync, existsSync } = await import('node:fs');
+        const { join: j } = await import('node:path');
+        const file = j(app.dataDirPath, 'logs', 'app.log');
+        if (!existsSync(file)) return { text: '', lines: 0 };
+        const lines = readFileSync(file, 'utf8').split('\n');
+        const max = Math.min(2000, Number(args[0]) || 300);
+        return { text: lines.slice(-max).join('\n'), lines: lines.length };
+      }
+      case 'diagnostics.reveal':
+        if (!app.host.reveal) return { ok: false, error: 'revealing files needs the desktop shell' };
+        app.host.reveal(String(args[0] ?? ''));
+        return { ok: true };
+
       case 'diagnostics.health':
         return app.health.run({ probeProviders: true });
       case 'diagnostics.selfTest': {
@@ -311,6 +325,8 @@ export class Api {
         return { audioBase64: Buffer.concat(chunks).toString('base64'), mimeType: 'audio/wav' };
       }
 
+      case 'extensions.panels':
+        return app.extensions.listPanels().map((pr) => ({ id: pr.id, title: pr.title, markdown: pr.markdown }));
       case 'extensions.list':
         return app.extensions.list().map((e) => ({
           id: e.manifest.id,

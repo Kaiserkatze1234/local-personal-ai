@@ -2,6 +2,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { CheckpointInfo } from '../../shared/types/ipc.js';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 import { useStore } from '../state/store.js';
 
 export function DiagnosticsPanel(): ReactElement {
@@ -19,6 +20,18 @@ export function DiagnosticsPanel(): ReactElement {
     void loadCkpts();
   }, []);
 
+  const [logText, setLogText] = useState<string | null>(null);
+  const [lastExport, setLastExport] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        setLogText((await api.call('diagnostics.logs', 200)).text);
+      } catch {
+        /* no bridge */
+      }
+    })();
+  }, []);
+
   const h = s.health;
   return (
     <div className="panel">
@@ -30,9 +43,32 @@ export function DiagnosticsPanel(): ReactElement {
       </p>
       <div className="row" style={{ marginBottom: 14 }}>
         <button onClick={() => void s.refreshHealth()}>Refresh</button>
-        <button onClick={() => void s.runSelfTest()}>Run self-tests</button>
-        <button onClick={() => void s.exportDiagnostics()}>Export diagnostics</button>
+        <button onClick={() => void s.runSelfTest()}>{L('Run self-tests')}</button>
+        <button
+          onClick={() =>
+            void (async () => {
+              try {
+                const r = await api.call('diagnostics.export');
+                if (r && typeof r === 'object' && 'path' in r) setLastExport(String((r as { path: string }).path));
+              } catch {
+                await s.exportDiagnostics();
+              }
+            })()
+          }
+        >
+          {L('Export diagnostics')}
+        </button>
+        {lastExport && <button onClick={() => void api.call('diagnostics.reveal', lastExport)}>{L('Open export location')}</button>}
+        <button onClick={() => void api.call('diagnostics.reveal', `${s.info?.dataDir ?? ''}/logs/app.log`)}>{L('open log folder')}</button>
       </div>
+      {logText !== null && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <h3 style={{ marginTop: 0 }}>{L('Recent log')}</h3>
+          <pre className="mono" style={{ maxHeight: 220, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', margin: 0 }}>
+            {logText.split('\n').slice(-120).join('\n')}
+          </pre>
+        </div>
+      )}
 
       <div className="health-grid">
         {(h?.components ?? []).map((c) => (
