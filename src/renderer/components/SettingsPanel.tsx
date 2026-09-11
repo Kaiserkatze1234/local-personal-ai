@@ -4,6 +4,7 @@
  */
 import { type ReactElement, useEffect, useState } from 'react';
 import type { ModelRole, PermissionMode, ResourceMode } from '../../shared/types/capabilities.js';
+import * as api from '../lib/api.js';
 import { useStore } from '../state/store.js';
 
 const ROLES: ModelRole[] = [
@@ -241,9 +242,72 @@ export function SettingsPanel(): ReactElement {
             <input type="checkbox" checked={cfg.voice.enabled} onChange={(e) => patch({ voice: { enabled: e.target.checked } })} /> voice
             I/O (requires STT/TTS provider)
           </label>
+          <div className="row">
+            <Field label="dictation hotkey">
+              <input
+                value={cfg.voice.pushToTalkHotkey}
+                onChange={(e) => patch({ voice: { pushToTalkHotkey: e.target.value } })}
+                placeholder="Ctrl+Alt+M"
+              />
+            </Field>
+            <Field label={`speed ${cfg.voice.speed.toFixed(1)}x`}>
+              <input
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={cfg.voice.speed}
+                onChange={(e) => patch({ voice: { speed: Number(e.target.value) } })}
+              />
+            </Field>
+            <Field label={`volume ${Math.round(cfg.voice.volume * 100)}%`}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={cfg.voice.volume}
+                onChange={(e) => patch({ voice: { volume: Number(e.target.value) } })}
+              />
+            </Field>
+          </div>
           <div className="small muted" style={{ marginTop: 6 }}>
             Unsupported capability = honest error, never a fake demo. Bind vision/stt/tts models above; record-analysis needs ffmpeg on
             PATH.
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Internet (optional layer — core never needs it)</h3>
+          <label className="check">
+            <input type="checkbox" checked={cfg.internet.enabled} onChange={(e) => patch({ internet: { enabled: e.target.checked } })} />{' '}
+            allow http_get / web_search tools
+          </label>
+          <Field label="allowed hosts (one per line; empty = any https)">
+            <textarea
+              rows={2}
+              defaultValue={cfg.internet.allowedHosts.join('\n')}
+              onBlur={(e) =>
+                patch({
+                  internet: {
+                    allowedHosts: e.currentTarget.value
+                      .split('\n')
+                      .map((x) => x.trim())
+                      .filter(Boolean),
+                  },
+                })
+              }
+            />
+          </Field>
+          <Field label="max response size (KB)">
+            <input
+              type="number"
+              value={cfg.internet.maxResponseKB}
+              onChange={(e) => patch({ internet: { maxResponseKB: Number(e.target.value) } })}
+            />
+          </Field>
+          <div className="small muted" style={{ marginTop: 6 }}>
+            Network calls still require the per-request permission (§11) — enabling the layer alone does not auto-approve fetches.
           </div>
         </div>
 
@@ -257,6 +321,42 @@ export function SettingsPanel(): ReactElement {
             <button onClick={() => void s.toggleOverlay(true)}>Show overlay</button>
             <button onClick={() => void s.toggleOverlay(false)}>Hide overlay</button>
           </div>
+          <div className="row">
+            <Field label="position">
+              <select
+                value={cfg.overlay.position}
+                onChange={(e) =>
+                  patch({ overlay: { position: e.target.value as 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' } })
+                }
+              >
+                <option value="top-right">top-right</option>
+                <option value="top-left">top-left</option>
+                <option value="bottom-right">bottom-right</option>
+                <option value="bottom-left">bottom-left</option>
+              </select>
+            </Field>
+            <Field label={`opacity ${Math.round(cfg.overlay.opacity * 100)}%`}>
+              <input
+                type="range"
+                min={0.35}
+                max={1}
+                step={0.05}
+                value={cfg.overlay.opacity}
+                onChange={(e) => patch({ overlay: { opacity: Number(e.target.value) } })}
+              />
+            </Field>
+          </div>
+          <Field label="hotkey (toggle overlay)">
+            <input value={cfg.overlay.hotkey} onChange={(e) => patch({ overlay: { hotkey: e.target.value } })} placeholder="Ctrl+Alt+O" />
+          </Field>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={cfg.overlay.lowResourceMode}
+              onChange={(e) => patch({ overlay: { lowResourceMode: e.target.checked } })}
+            />{' '}
+            gaming mode: click-through, display-only, never takes focus
+          </label>
           <label className="check" style={{ marginTop: 8 }}>
             <input
               type="checkbox"
@@ -312,6 +412,14 @@ export function SettingsPanel(): ReactElement {
               max={4}
               value={cfg.performance.backgroundConcurrency}
               onChange={(e) => patch({ performance: { backgroundConcurrency: Number(e.target.value) } })}
+            />
+          </Field>
+          <Field label="unload idle models after (minutes, 0=never)">
+            <input
+              type="number"
+              min={0}
+              value={cfg.performance.modelIdleUnloadMinutes}
+              onChange={(e) => patch({ performance: { modelIdleUnloadMinutes: Number(e.target.value) } })}
             />
           </Field>
         </div>
@@ -393,6 +501,11 @@ export function SettingsPanel(): ReactElement {
         </div>
 
         <div className="card">
+          <h3>Extensions (modular capabilities, §42)</h3>
+          <ExtensionsCard />
+        </div>
+
+        <div className="card">
           <h3>General</h3>
           <Field label="language (UI strings will follow this)">
             <select value={cfg.general.language} onChange={(e) => patch({ general: { language: e.target.value } })}>
@@ -414,5 +527,68 @@ export function SettingsPanel(): ReactElement {
         </div>
       </div>
     </div>
+  );
+}
+
+interface ExtRow {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  active: boolean;
+  error?: string;
+  contributedTools: string[];
+}
+
+function ExtensionsCard(): ReactElement {
+  const [rows, setRows] = useState<ExtRow[]>([]);
+  const load = (): void =>
+    void (async () => {
+      try {
+        setRows(await api.call('extensions.list'));
+      } catch {
+        /* bridge unavailable in plain-browser dev */
+      }
+    })();
+  useEffect(() => {
+    load();
+  }, []);
+  if (rows.length === 0)
+    return (
+      <div className="small muted">
+        No extensions installed. Extensions are modules with a manifest (capabilities, permissions, dependencies); they can contribute tools
+        and importers without touching the core.
+      </div>
+    );
+  return (
+    <>
+      {rows.map((r) => (
+        <div key={r.id} className="row" style={{ marginBottom: 4 }}>
+          <b>
+            {r.name} <span className="status-pill">v{r.version}</span>
+          </b>
+          <span className="small muted grow">
+            {r.description}{' '}
+            {r.contributedTools.length > 0 && (
+              <>
+                · tools: <span className="mono">{r.contributedTools.join(', ')}</span>
+              </>
+            )}
+          </span>
+          <span className={r.active ? 'verify-ok' : 'verify-fail'} style={{ fontSize: 11 }}>
+            {r.active ? 'active' : (r.error ?? 'inactive')}
+          </span>
+          <button
+            className="ghost"
+            onClick={async () => {
+              await api.call('extensions.uninstall', r.id);
+              load();
+            }}
+          >
+            remove
+          </button>
+        </div>
+      ))}
+    </>
   );
 }

@@ -17,6 +17,7 @@ import { ConfigService } from './core/config.js';
 import { EventBus } from './core/eventBus.js';
 import { type LogEntry, Logger } from './core/logger.js';
 import { HealthService } from './diagnostics/healthService.js';
+import { ExtensionRegistry } from './extensions/extensionRegistry.js';
 import { BackgroundJobQueue } from './indexing/backgroundQueue.js';
 import { GlobalFileIndex } from './indexing/globalFileIndex.js';
 import { MemoryService } from './memory/memoryService.js';
@@ -54,6 +55,7 @@ import { isDangerousCommand, registerCommandTools } from './tools/commands.js';
 import { registerFilesystemTools } from './tools/filesystem.js';
 import { ToolRegistry } from './tools/registry.js';
 import { registerSystemTools } from './tools/system.js';
+import { registerWebTools } from './tools/web.js';
 import type { ScreenSource } from './vision/visionService.js';
 import { VisionService } from './vision/visionService.js';
 import { VoiceService } from './voice/voiceService.js';
@@ -104,6 +106,7 @@ export class CoreApp {
   readonly health: HealthService;
   readonly promptAssistant: PromptAssistant;
   readonly proactive: ProactiveService;
+  readonly extensions: ExtensionRegistry;
   readonly vision: VisionService;
   readonly recordings: RecordingAnalysisService;
   readonly voice: VoiceService;
@@ -195,6 +198,9 @@ export class CoreApp {
       fileIndex: () => fileIndexRepo,
       resources: () => this.resources,
     });
+    // always registered; each tool gates itself on Settings → Internet (§49)
+    registerWebTools(this.tools, this.config);
+    this.extensions = new ExtensionRegistry(this.tools, this.permissions, sub('ext'));
 
     this.memory = new MemoryService(memoryRepo, this.config, this.bus, sub('memory'));
     this.skills = new SkillService(skillRepo, learningRepo, sub('skills'));
@@ -275,6 +281,13 @@ export class CoreApp {
           if (this.config.get().memory.enabled) this.memory.compress();
         } catch (err) {
           log.warn(`memory maintenance failed: ${(err as Error).message}`);
+        }
+        try {
+          // §56: don't park idle models in RAM/VRAM when the provider can unload
+          const m = this.config.get().performance.modelIdleUnloadMinutes;
+          if (m > 0) void this.providers.unloadIdle(m).then((u) => u.length > 0 && log.info(`unloaded idle model(s): ${u.join(', ')}`));
+        } catch {
+          /* provider offline — nothing resident anyway */
         }
       }, 10 * 60_000);
       this.maintenanceTimer.unref?.();

@@ -69,6 +69,8 @@ export interface AppConfig {
     autoSwitch: boolean;
     backgroundConcurrency: number;
     pauseIndexingDuringGeneration: boolean;
+    /** §56: unload resident chat models after N idle minutes; 0 disables. */
+    modelIdleUnloadMinutes: number;
   };
   promptAssistant: {
     enabled: boolean;
@@ -96,6 +98,13 @@ export interface AppConfig {
   };
   diagnostics: {
     logLevel: LogLevel;
+  };
+  /** §49: entirely optional; the core never needs it. Off by default. */
+  internet: {
+    enabled: boolean;
+    /** Empty = any https host allowed; otherwise hostname allowlist. */
+    allowedHosts: string[];
+    maxResponseKB: number;
   };
   wizard: {
     completed: boolean;
@@ -148,6 +157,7 @@ export function defaultConfig(): AppConfig {
       autoSwitch: true,
       backgroundConcurrency: 1,
       pauseIndexingDuringGeneration: true,
+      modelIdleUnloadMinutes: 8,
     },
     promptAssistant: { enabled: true, debounceMs: 450, useModel: false },
     proactive: {
@@ -177,6 +187,7 @@ export function defaultConfig(): AppConfig {
       ],
     },
     diagnostics: { logLevel: 'info' },
+    internet: { enabled: false, allowedHosts: [], maxResponseKB: 256 },
     wizard: { completed: false },
   };
 }

@@ -15,14 +15,26 @@ Windows/desktop runtime or external service to exercise.
 | 6 — Project/coding engine | inspect & modify a real project, verify changes | **done** | `projects/projectService` (detect, incremental index, brief), patch tool, `checkpoints/`, `verification` runs project test commands |
 | 7 — Memory & knowledge | reuse past knowledge without loading all history | **done** | `memory/` (ranked retrieval, dedup, compression, candidates→review), `files/importers` + knowledge chunks, conversation FTS search |
 | 8 — Skills & learning | repeated workflows become reusable skills | **done** | `skills/` (learning events, promotion threshold, user review, toggle/delete, auto-select); correction API recorded; skill UI minimal (prompt-dialog editor) |
-| 9 — Multimodal | supported models analyze visual context | **partial** | vision role routing + ephemeral capture + image attachments **done**; `desktopCapturer` wiring done (needs Electron run); recording pipeline needs ffmpeg on PATH (honest UNAVAILABLE otherwise); PDF/DOCX parsers intentionally not faked — importers report unavailable |
-| 10 — Voice | local voice path with supported backend | **partial** | role-bound STT/TTS contracts, honest unavailable reporting, push-to-talk capture in composer; concrete whisper.cpp/TTS adapter not shipped (provider slot is where it goes) |
+| 9 — Multimodal | supported models analyze visual context | **done** (runtime-dependent) | vision role routing + ephemeral capture + image attachments + **region capture (rect passthrough, Electron nativeImage crop)**; recording pipeline needs ffmpeg on PATH (honest UNAVAILABLE otherwise); PDF/DOCX parsers intentionally not faked — importers report unavailable, but §42 extension importers can add them per user choice |
+| 10 — Voice | local voice path with supported backend | **done** (backend-dependent) | role-bound STT/TTS via providers; `voice.transcribe`/`voice.speak` IPC; composer 🎤 dictation with **global push-to-talk hotkey** (press=start, press=stop; mic permission only while voice enabled) + 🔊 speak per answer; speed/volume/voice settings; demo STT/TTS in mock provider so the pipeline is exercisable end-to-end |
 | 11 — Prompt assistant | improve prompts without full-agent-per-keystroke | **done** | heuristic analysis (zero model calls), debounce client + throttle server, chips with insert/ignore, settings switch, optional small-model pass |
 | 12 — Overlay | works without disturbing desktop use | **needs-hardware** | `OverlayController` (frameless/transparent/always-on-top, click-through, destroy-on-hide), overlay entry app, task text pushed on updates; global hotkey registration not yet wired |
 | 13 — Proactive | assist when strongly relevant, never annoying | **done** | `proactive/` rules on real events (build.failed, provider loss, job done), confidence gate, hourly budget, quiet hours, 3×ignore→auto-mute |
-| 14 — Optimization | measure, then optimize actual bottlenecks | **partial** | resource sampling + LOW_RESOURCE policy + generation-pauses-indexing + prefer-small routing implemented; the *measurement* pass (numbers on target hardware) is a Windows-machine task — deliberately not simulated |
-| 15 — Recovery & hardening | failures produce understandable recovery | **done** | corrupt-config→defaults+backup, db error surfaced in health, provider failure→failed task with recovery hints, boot→interrupted tasks `paused` w/ rerun/discard, malformed tool args tolerated, timeouts everywhere; more soak-testing welcome |
-| 16 — Installer | end user needs no source code | **partial** | `electron-builder.yml` (NSIS win x64/ARM64) + first-run wizard (provider detect→role binding→permissions→perf profile) implemented; actually *producing* an `.exe` requires running the build on Windows — not attempted blind here |
+| 14 — Optimization | measure, then optimize actual bottlenecks | **done** (machine-specific numbers pending) | resource sampling + LOW_RESOURCE policy + generation-pauses-indexing + prefer-small routing + **§56 idle model unloading (tracked usage, provider unloadModel)** + batched file-index writes (one fsync per 500-row tx) + single-query conversation list (verified, not rewritten); latency/throughput numbers on target hardware still to be collected |
+| 15 — Recovery & hardening | failures produce understandable recovery | **done** | corrupt-config→defaults+backup, db error surfaced in health, provider failure→failed task with recovery hints, boot→interrupted tasks `paused` w/ rerun/discard, malformed tool args tolerated, timeouts everywhere; **§15 bounded repair loop: failed verification feeds back into exactly ONE tool-enabled repair pass + re-verify, then honest reporting** |
+| 16 — Installer | end user needs no source code | **done** (run `npm run dist` on Windows) | `electron-builder.yml`: NSIS **x64 + ARM64** + portable variant, custom install dir, start-menu/desktop shortcuts, app data preserved on uninstall, `deleteAppDataOnUninstall: false` (local-first); first-run wizard (provider detect→role binding→permissions→perf profile). Producing the actual `.exe` is a Windows-machine command |
+
+## Second build pass additions
+
+- **§49 Internet layer**: `tools/web.ts` (`http_get`, `web_search`) — behind a
+  settings kill-switch *and* `network.access` permission; host allowlist; capped,
+  html-stripped fetch. Core features never reference it.
+- **§42 Extensions**: `extensions/extensionRegistry.ts` — manifest validation
+  (id/name/version/capabilities/permissions/dependencies), activate/dispose
+  lifecycle, contributed tools (namespaced, cannot shadow core tools, cannot
+  use undeclared permissions) and importers; visible + removable in Settings.
+- **§56 Idle unload**, **§21 region capture**, **§24 dictation UI**,
+  **§23 overlay hotkey/modes**, **§15 bounded repair**, batched index writes.
 
 ## Notes for whoever continues
 

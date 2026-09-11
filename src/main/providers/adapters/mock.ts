@@ -14,7 +14,9 @@ import type {
   ModelInfo,
   ModelProviderAdapter,
   ProviderHealth,
+  SttModelContract,
   ToolCallSpec,
+  TtsModelContract,
 } from '../../../shared/types/models.js';
 
 export type MockTurn = string | { text?: string; toolCalls?: ToolCallSpec[]; chunks?: string[]; error?: string };
@@ -42,6 +44,13 @@ export class MockProvider implements ModelProviderAdapter {
   private chunkDelayMs: number;
   /** Every request received — assertions in tests. */
   readonly requests: GenerationRequest[] = [];
+  /** Model ids the resource manager asked to unload (§56) — test hook. */
+  readonly unloadCalls: string[] = [];
+  /** Scripted transcription outputs (falls back to a fixed demo text). */
+  private sttScript: string[] = [];
+  pushTranscript(text: string): void {
+    this.sttScript.push(text);
+  }
   healthState: ProviderHealth['state'] = 'OK';
 
   constructor(opts: MockProviderOptions = {}) {
@@ -127,6 +136,25 @@ export class MockProvider implements ModelProviderAdapter {
   async embed(): Promise<number[][]> {
     // Deterministic toy embedding for tests (NOT a real semantic model).
     return [];
+  }
+
+  /** Demo STT/TTS so the voice pipeline is exercisable without hardware (§24). */
+  stt: SttModelContract = {
+    transcribe: async (): Promise<{ text: string; confidence?: number }> => {
+      const next = this.sttScript.shift();
+      return { text: next ?? '[demo] voice transcription — bind a real STT model in Settings for accurate results.' };
+    },
+  };
+
+  tts: TtsModelContract = {
+    async *synthesize(req): AsyncIterable<Uint8Array> {
+      yield new TextEncoder().encode(`demo-audio:${req.text.slice(0, 60)}`);
+    },
+  };
+
+  async unloadModel(modelId: string): Promise<boolean> {
+    this.unloadCalls.push(modelId);
+    return true;
   }
 }
 

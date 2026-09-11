@@ -5,7 +5,7 @@
  */
 
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Notification, screen } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, screen, session } from 'electron';
 import { APP_ID, APP_NAME, DATA_DIR_ENV, DEV_SERVER_ENV } from '../shared/constants.js';
 import type { AppEvent } from '../shared/types/events.js';
 import { Api } from './api.js';
@@ -55,6 +55,41 @@ async function boot(): Promise<void> {
 
   core = new CoreApp({ dataDir, host });
   await core.boot();
+
+  // ---- global hotkeys (§23 overlay toggle, §24 voice activation) ----
+  const registerShortcuts = (): void => {
+    globalShortcut.unregisterAll();
+    if (!core) return;
+    const c = core.getConfig();
+    if (c.overlay.enabled && c.overlay.hotkey) {
+      const ok = globalShortcut.register(c.overlay.hotkey, () => {
+        const ovl = overlay;
+        if (!core || !ovl) return;
+        if (ovl.active) ovl.hide();
+        else ovl.show();
+      });
+      if (!ok) core.log.child('host').warn(`overlay hotkey "${c.overlay.hotkey}" is taken by another app`);
+    }
+    if (c.voice.enabled && c.voice.pushToTalkHotkey) {
+      // globalShortcut has no key-up; treat as press=start, press=stop toggle
+      const ok = globalShortcut.register(c.voice.pushToTalkHotkey, () => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lpai:ptt', 'toggle');
+      });
+      if (!ok) core.log.child('host').warn(`push-to-talk hotkey "${c.voice.pushToTalkHotkey}" is taken by another app`);
+    }
+  };
+  registerShortcuts();
+  const unwatchConfig = core.config.onChange(() => registerShortcuts());
+  app.on('will-quit', () => {
+    unwatchConfig();
+    globalShortcut.unregisterAll();
+  });
+
+  // microphone is granted only while voice input is enabled (§24, §35)
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+    const allowed = permission === 'media' && (core?.getConfig().voice.enabled ?? false);
+    cb(allowed);
+  });
 
   // keep proactive overlay informed about task state (§23 task display)
   core.bus.on('task.updated', (e) => {

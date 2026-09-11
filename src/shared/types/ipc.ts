@@ -116,7 +116,14 @@ export interface InvokeContract {
   'diagnostics.export': { args: []; res: { path: string } };
   'prompt.analyze': { args: [inputId: string, text: string, projectId?: string]; res: PromptSuggestion[] };
   'prompt.analyzeDebounced': { args: [inputId: string, text: string, projectId?: string]; res: 'scheduled' };
-  'screen.capture': { args: []; res: { mimeType: string; dataBase64: string } };
+  'screen.capture': { args: [rect?: CaptureRect]; res: { mimeType: string; dataBase64: string } };
+  'voice.transcribe': { args: [audioBase64: string, mimeType: string]; res: { text: string; confidence?: number } };
+  'voice.speak': { args: [text: string]; res: { audioBase64: string; mimeType: string } };
+  'extensions.list': {
+    args: [];
+    res: { id: string; name: string; version: string; description?: string; active: boolean; error?: string; contributedTools: string[] }[];
+  };
+  'extensions.uninstall': { args: [id: string]; res: boolean };
   'overlay.show': { args: []; res: boolean };
   'overlay.hide': { args: []; res: boolean };
   'resource.mode': { args: [mode: ResourceMode | 'auto']; res: ResourceMode };
@@ -126,3 +133,10 @@ export interface InvokeContract {
 export type IpcMethod = keyof InvokeContract;
 
 export type InvokeResult<R> = { ok: true; data: R } | { ok: false; error: { kind: string; message: string; recovery?: string[] } };
+
+export interface CaptureRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}

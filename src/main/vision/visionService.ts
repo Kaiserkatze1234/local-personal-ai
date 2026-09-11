@@ -14,10 +14,17 @@ import type { SubLogger } from '../core/logger.js';
 import type { ProviderRegistry } from '../providers/registry.js';
 import type { ModelRouter } from '../providers/router.js';
 
+export interface CaptureRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** Pluggable screen source (Electron desktopCapturer in the real app). */
 export interface ScreenSource {
   available(): boolean;
-  capture(): Promise<{ mimeType: string; dataBase64: string }>;
+  capture(opts?: { rect?: CaptureRect }): Promise<{ mimeType: string; dataBase64: string }>;
 }
 
 export class VisionService {
@@ -63,13 +70,14 @@ export class VisionService {
   }
 
   /** Captures the screen and keeps it in memory only unless persist configured. */
-  async captureScreen(): Promise<{ mimeType: string; dataBase64: string }> {
-    if (!this.screen?.available()) {
+  async captureScreen(rect?: CaptureRect): Promise<{ mimeType: string; dataBase64: string }> {
+    const src = this.screen;
+    if (!src?.available()) {
       throw new AppError('not_implemented', 'Screen capture is not available in this session (needs the Electron desktop shell).', [
         'Use the app window, or attach an image file directly',
       ]);
     }
-    const shot = await this.screen.capture();
+    const shot = await src.capture(rect ? { rect } : undefined);
     this.lastCapture = { ...shot, at: Date.now() };
     if (this.config.get().vision.persistScreenshots) {
       const dir = join(this.dataDir, 'screens');

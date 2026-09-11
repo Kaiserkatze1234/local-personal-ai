@@ -355,7 +355,16 @@ export class ProjectRepo {
 export class FileIndexRepo {
   constructor(private s: SqlStore) {}
 
-  upsert(entry: { root: string; path: string; name: string; size: number; mtimeMs: number; kind: string }): void {
+  /** Batched write — one transaction instead of one implicit fsync per row (§55). */
+  upsertMany(entries: { root: string; path: string; name: string; size: number; mtimeMs: number; kind: string }[]): void {
+    if (entries.length === 0) return;
+    const at = nowIso();
+    this.s.tx(() => {
+      for (const e of entries) this.upsert(e, at);
+    });
+  }
+
+  upsert(entry: { root: string; path: string; name: string; size: number; mtimeMs: number; kind: string }, indexedAt = nowIso()): void {
     this.s.run(
       `INSERT INTO file_index (root,path,name,size,mtime_ms,kind,indexed_at) VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime_ms=excluded.mtime_ms, indexed_at=excluded.indexed_at`,
@@ -365,7 +374,7 @@ export class FileIndexRepo {
       entry.size,
       entry.mtimeMs,
       entry.kind,
-      nowIso(),
+      indexedAt,
     );
   }
 

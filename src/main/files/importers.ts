@@ -2,7 +2,7 @@
  * File ingestion adapters — spec §12/§62.
  * Lifecycle: detect -> parse -> metadata -> normalize -> chunk -> index.
  * Formats without a usable local parser are reported as UNAVAILABLE,
- * never faked (§3.8).
+ * never faked (§3.8). Extra parsers can be contributed by extensions (§42).
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
@@ -150,8 +150,21 @@ class AudioImporter implements Importer {
   }
 }
 
+/** Extensions can register additional importers; they are consulted first. */
+const contributedImporters: Importer[] = [];
+export function registerImporter(importer: Importer): void {
+  contributedImporters.unshift(importer);
+}
+export function unregisterImportersByPrefix(prefix: string): number {
+  const before = contributedImporters.length;
+  for (let i = contributedImporters.length - 1; i >= 0; i--)
+    if (contributedImporters[i]?.id.startsWith(prefix)) contributedImporters.splice(i, 1);
+  return before - contributedImporters.length;
+}
+
 export function defaultImporters(): Importer[] {
   return [
+    ...contributedImporters,
     makeTextImporter('markdown', ['.md', '.markdown']),
     makeTextImporter('plain', ['.txt', '.log']),
     makeTextImporter('json', ['.json'], (raw) => {

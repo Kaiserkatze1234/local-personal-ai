@@ -53,6 +53,10 @@ const ALLOWED_METHODS = new Set<string>([
   'prompt.analyze',
   'prompt.analyzeDebounced',
   'screen.capture',
+  'voice.transcribe',
+  'voice.speak',
+  'extensions.list',
+  'extensions.uninstall',
   'overlay.show',
   'overlay.hide',
   'resource.mode',
@@ -75,6 +79,11 @@ const api = {
     const listener = (_e: Electron.IpcRendererEvent, text: string): void => callback(String(text));
     ipcRenderer.on('lpai:overlay', listener);
     return () => ipcRenderer.removeListener('lpai:overlay', listener);
+  },
+  onPtt(callback: (action: 'toggle') => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, action: string): void => callback(action === 'toggle' ? 'toggle' : 'toggle');
+    ipcRenderer.on('lpai:ptt', listener);
+    return () => ipcRenderer.removeListener('lpai:ptt', listener);
   },
 };
 

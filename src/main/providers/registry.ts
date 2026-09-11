@@ -27,6 +27,8 @@ export function unhealth(providerId: string, message: string, state: ProviderHea
 
 export class ProviderRegistry {
   private providers = new Map<string, RegisteredProvider>();
+  /** modelId -> last real use, for idle unloading (§56). */
+  private lastUsed = new Map<string, number>();
 
   constructor(
     private store: SqlStore,
@@ -139,6 +141,7 @@ export class ProviderRegistry {
     if (!found.provider.adapter.chat) throw AppError.provider(`Provider "${found.provider.label}" has no chat capability.`);
     if (found.provider.health.state !== 'OK')
       throw AppError.provider(`Provider "${found.provider.label}" is unhealthy: ${found.provider.health.message}`);
+    this.lastUsed.set(modelId, Date.now());
     return found;
   }
 
@@ -146,7 +149,22 @@ export class ProviderRegistry {
     const found = this.findModel(modelId);
     if (!found) throw AppError.provider(`Embedding model "${modelId}" is not available.`);
     if (!found.provider.adapter.embeddings) throw AppError.provider(`Provider "${found.provider.label}" has no embeddings capability.`);
+    this.lastUsed.set(modelId, Date.now());
     return found;
+  }
+
+  /** §56: ask providers to drop models idle for `idleMinutes`. */
+  async unloadIdle(idleMinutes: number, keep = new Set<string>()): Promise<string[]> {
+    if (idleMinutes <= 0) return [];
+    const cutoff = Date.now() - idleMinutes * 60_000;
+    const unloaded: string[] = [];
+    for (const [modelId, at] of [...this.lastUsed]) {
+      if (keep.has(modelId) || at > cutoff) continue;
+      const ok = await this.unloadModel(modelId).catch(() => false);
+      if (ok) unloaded.push(modelId);
+      this.lastUsed.delete(modelId);
+    }
+    return unloaded;
   }
 
   async unloadModel(modelId: string): Promise<boolean> {

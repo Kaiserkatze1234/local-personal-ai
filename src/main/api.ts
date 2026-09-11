@@ -261,10 +261,41 @@ export class Api {
         return 'scheduled';
       }
 
-      case 'screen.capture': {
-        const shot = await app.vision.captureScreen();
-        return shot;
+      case 'screen.capture':
+        return app.vision.captureScreen(args[0] as import('./vision/visionService.js').CaptureRect | undefined);
+
+      case 'voice.transcribe': {
+        const bytes = Buffer.from(String(args[0] ?? ''), 'base64');
+        const r = await app.voice.transcribe({ audio: new Uint8Array(bytes), mimeType: String(args[1] ?? 'audio/webm') });
+        if ('unavailable' in r)
+          throw new AppError('not_implemented', r.unavailable, [
+            'Start a local STT service (e.g. whisper.cpp) and register it, or bind an STT-capable model to the STT role in Settings',
+          ]);
+        return r;
       }
+      case 'voice.speak': {
+        const r = app.voice.synthesize(String(args[0] ?? ''));
+        if ('unavailable' in r)
+          throw new AppError('not_implemented', r.unavailable, [
+            'Register a local TTS provider or bind a TTS model to the TTS role in Settings',
+          ]);
+        const chunks: Buffer[] = [];
+        for await (const c of r as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(c));
+        return { audioBase64: Buffer.concat(chunks).toString('base64'), mimeType: 'audio/wav' };
+      }
+
+      case 'extensions.list':
+        return app.extensions.list().map((e) => ({
+          id: e.manifest.id,
+          name: e.manifest.name,
+          version: e.manifest.version,
+          description: e.manifest.description,
+          active: e.active,
+          error: e.error,
+          contributedTools: e.contributedTools,
+        }));
+      case 'extensions.uninstall':
+        return app.extensions.uninstall(String(args[0]));
 
       case 'overlay.show':
         app.host?.overlayShow?.();

@@ -45,18 +45,22 @@ export class OverlayController {
     }
     const cfg = this.getConfig().overlay;
     const { x, y } = this.position();
+    // §23/§46: gaming-friendly low-resource mode = pure display (never takes
+    // focus or mouse input). Normal mode = small interactive card (ask box).
+    const interactive = !cfg.lowResourceMode;
     this.win = new BrowserWindow({
       width: 340,
-      height: 140,
+      height: interactive ? 220 : 140,
       x,
       y,
       frame: false,
       transparent: true,
       resizable: true,
       skipTaskbar: true,
-      focusable: false,
+      focusable: interactive,
       alwaysOnTop: true,
       hasShadow: false,
+      opacity: Math.min(1, Math.max(0.35, cfg.opacity)),
       webPreferences: {
         preload: join(this.rendererDir, '..', 'preload', 'index.cjs'),
         contextIsolation: true,
@@ -70,7 +74,7 @@ export class OverlayController {
       // do not appear in alt-tab / screenshots of the game bar
       this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
-    this.win.setIgnoreMouseEvents(true, { forward: true });
+    if (!interactive) this.win.setIgnoreMouseEvents(true, { forward: true });
     void this.win.loadURL(this.targetUrl());
     this.win.on('closed', () => {
       this.win = null;

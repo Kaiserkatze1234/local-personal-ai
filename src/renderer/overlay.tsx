@@ -1,18 +1,46 @@
 /**
- * Overlay window entry — spec §23/§46. Compact card, low resource, closable,
- * shows proactive suggestions + active task status pushed from main.
+ * Overlay window entry — spec §23/§46. Compact card, low resource, closable.
+ * Normal mode: interactive (status line + quick "what is on my screen" ask).
+ * Low-resource mode: display-only (main process makes it click-through).
  */
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { onOverlayText } from './lib/api.js';
+import { call, onOverlayText } from './lib/api.js';
 import './styles.css';
 
 function OverlayApp(): ReactElement {
   const [text, setText] = useState<string>('Idle — no active tasks.');
   const [expanded, setExpanded] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => onOverlayText((t) => setText(t)), []);
+
+  const ask = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    try {
+      let images: { mimeType: string; dataBase64: string }[] | undefined;
+      try {
+        const shot = await call('screen.capture');
+        images = [shot];
+      } catch {
+        /* no screen source — ask anyway, as a plain question */
+      }
+      const res = await call('chat.send', {
+        text: question.trim() || 'What is on my screen? Note anything that looks like a problem.',
+        mode: 'CHAT',
+        images,
+      });
+      const msgs = await call('conversations.messages', res.conversationId);
+      const last = [...msgs].reverse().find((m) => m.role === 'assistant');
+      setText(String(last?.content ?? 'No answer (is a vision-capable model bound?).'));
+    } catch (err) {
+      setText(err instanceof Error ? err.message : 'Ask failed.');
+    } finally {
+      setBusy(false);
+    }
+  }, [question]);
 
   if (hidden)
     return (
@@ -33,6 +61,21 @@ function OverlayApp(): ReactElement {
         </button>
       </div>
       <div className="overlay-body">{text}</div>
+      {expanded && (
+        <div className="overlay-ask">
+          <input
+            value={question}
+            placeholder="ask about your screen…"
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !busy) void ask();
+            }}
+          />
+          <button onClick={() => void ask()} disabled={busy}>
+            {busy ? '…' : 'ask'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

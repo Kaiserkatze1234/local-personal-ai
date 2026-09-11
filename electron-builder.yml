@@ -1,5 +1,7 @@
 # electron-builder config — Phase 16 (Windows installer)
 # Docs: https://www.electron.build — run via `npm run dist` on Windows.
+# NOTE: drop a real 256x256 multi-size icon at build/icon.ico before shipping;
+# electron-builder falls back to the default Electron icon otherwise.
 appId: ai.local.personalai
 productName: Local Personal AI
 directories:
@@ -14,11 +16,19 @@ npmRebuild: true
 win:
   target:
     - target: nsis
-      arch: [x64]
-  artifactName: ${productName}-Setup-${version}.${ext}
+      arch: [x64, arm64] # spec target: Windows x64 OR ARM64
+    - target: portable
+      arch: [x64] # no-install run; data still lands in %APPDATA%/lpai
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+portable:
+  artifactName: ${productName}-Portable-${version}.${ext}
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+  createStartMenuShortcut: true
   shortcutName: Local Personal AI
+  uninstallDisplayName: Local Personal AI
+  # local-first principle: never silently delete user data (config/db/memory)
+  deleteAppDataOnUninstall: false

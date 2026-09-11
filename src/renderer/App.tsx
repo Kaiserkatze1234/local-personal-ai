@@ -136,6 +136,18 @@ export function App(): ReactElement {
 
       <PermissionDialog />
       <Notices />
+      {s.error && (
+        <div className="notices" style={{ top: 12, bottom: 'auto', right: 12 }}>
+          <div className="notice" style={{ borderLeftColor: 'var(--err)' }}>
+            <div>{s.error}</div>
+            <div className="row" style={{ marginTop: 4 }}>
+              <button className="ghost" onClick={() => useStore.setState({ error: null })}>
+                dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

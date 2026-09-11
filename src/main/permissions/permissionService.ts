@@ -192,6 +192,11 @@ export class PermissionService {
     }
   }
 
+  /** Drop session grants for a specific set (used when unloading extensions). */
+  revokeSessionGrantsFor(perms: PermissionId[]): void {
+    for (const p of perms) this.sessionGrants.delete(p);
+  }
+
   /** Clear session-scoped grants (e.g. on app mode change). */
   clearSession(): void {
     this.sessionGrants.clear();

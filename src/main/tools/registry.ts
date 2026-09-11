@@ -41,6 +41,10 @@ export class ToolRegistry {
     private assessRisk?: (name: string, input: Record<string, unknown>) => { dangerous?: boolean },
   ) {}
 
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   register(manifest: ToolManifest, run: RegisteredTool['run']): void {
     if (this.tools.has(manifest.name)) throw new Error(`Tool already registered: ${manifest.name}`);
     this.tools.set(manifest.name, { manifest, run });

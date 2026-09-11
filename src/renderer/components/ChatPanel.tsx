@@ -8,6 +8,25 @@ import type { PromptSuggestion } from '../../shared/types/events.js';
 import * as api from '../lib/api.js';
 import { useStore } from '../state/store.js';
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+  return btoa(bin);
+}
+
+function speak(text: string): void {
+  void (async () => {
+    try {
+      const r = await api.call('voice.speak', text.slice(0, 1200));
+      const audio = new Audio(`data:${r.mimeType};base64,${r.audioBase64}`);
+      await audio.play();
+    } catch (err) {
+      useStore.setState({ error: err instanceof api.ApiError ? err.message : String(err) });
+    }
+  })();
+}
+
 function renderAssistantContent(text: string): ReactElement {
   // pull [verification] lines out into a styled footer
   const lines = text.split('\n');
@@ -37,7 +56,49 @@ export function ChatPanel(): ReactElement {
   const s = useStore();
   const [draft, setDraft] = useState('');
   const [attachShot, setAttachShot] = useState<{ mimeType: string; dataBase64: string } | null>(null);
+  const [recording, setRecording] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  // push-to-talk: global hotkey (or nothing when voice disabled) — press starts, press stops (§24)
+  const toggleRec = (): void => {
+    if (recRef.current) {
+      recRef.current.stop();
+      return;
+    }
+    void (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined });
+        const parts: Blob[] = [];
+        mr.ondataavailable = (e) => parts.push(e.data);
+        mr.onstop = () => {
+          for (const track of stream.getTracks()) track.stop();
+          recRef.current = null;
+          setRecording(false);
+          void (async () => {
+            try {
+              const b64 = await blobToBase64(new Blob(parts, { type: 'audio/webm' }));
+              const r = await api.call('voice.transcribe', b64, 'audio/webm');
+              setDraft((d) => `${d}${d && !d.endsWith(' ') ? ' ' : ''}${r.text}`);
+            } catch (err) {
+              useStore.setState({ error: err instanceof api.ApiError ? err.message : String(err) });
+            }
+          })();
+        };
+        recRef.current = mr;
+        mr.start();
+        setRecording(true);
+      } catch (err) {
+        useStore.setState({ error: err instanceof Error ? `Microphone unavailable: ${err.message}` : 'Microphone unavailable' });
+      }
+    })();
+  };
+  const toggleRecRef = useRef(toggleRec);
+  toggleRecRef.current = toggleRec;
+  useEffect(() => api.onPtt(() => toggleRecRef.current()), []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -90,7 +151,21 @@ export function ChatPanel(): ReactElement {
                   {m.role === 'user' ? 'you' : 'local ai'}
                   {m.streaming ? ' ·' : ''}
                 </div>
-                <div className="bubble">{m.role === 'assistant' ? renderAssistantContent(String(m.content)) : String(m.content)}</div>
+                <div className="bubble">
+                  {m.role === 'assistant' ? renderAssistantContent(String(m.content)) : String(m.content)}
+                  {m.role === 'assistant' && !m.streaming && String(m.content).length > 3 && (
+                    <div style={{ textAlign: 'right', marginTop: 4 }}>
+                      <button
+                        className="ghost"
+                        style={{ padding: '2px 6px', fontSize: 11 }}
+                        title="read aloud (needs TTS backend)"
+                        onClick={() => speak(String(m.content))}
+                      >
+                        🔊 speak
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             {s.sending && s.mode !== 'CHAT' && (
@@ -155,6 +230,13 @@ export function ChatPanel(): ReactElement {
             />
             <button title="attach current screen (needs a vision-capable model)" onClick={() => void capture()}>
               📷
+            </button>
+            <button
+              title={recording ? 'stop dictation (voice → text)' : 'dictate (push-to-talk; global hotkey also toggles)'}
+              className={recording ? 'danger' : ''}
+              onClick={() => toggleRec()}
+            >
+              {recording ? '⏺' : '🎤'}
             </button>
             {s.sending ? (
               <button className="danger" onClick={() => void s.cancelChat()}>

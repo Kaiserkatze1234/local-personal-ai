@@ -13,6 +13,7 @@ interface Bridge {
   invoke(method: string, ...args: unknown[]): Promise<InvokeResult<unknown>>;
   onEvent(cb: (e: unknown) => void): () => void;
   onOverlayText?(cb: (t: string) => void): () => void;
+  onPtt?(cb: (a: 'toggle') => void): () => void;
 }
 
 declare global {
@@ -50,4 +51,9 @@ export function onEvent(cb: (e: import('../../shared/types/events.js').AppEvent)
 export function onOverlayText(cb: (t: string) => void): () => void {
   if (!bridge?.onOverlayText) return () => undefined;
   return bridge.onOverlayText(cb);
+}
+
+export function onPtt(cb: (a: 'toggle') => void): () => void {
+  if (!bridge?.onPtt) return () => undefined;
+  return bridge.onPtt(cb);
 }

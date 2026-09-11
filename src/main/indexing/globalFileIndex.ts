@@ -84,7 +84,7 @@ export class GlobalFileIndex {
   }
 
   private flush(batch: Parameters<FileIndexRepo['upsert']>[0][]): void {
-    for (const b of batch) this.repo.upsert(b);
+    this.repo.upsertMany(batch);
   }
 
   async indexOneFile(path: string): Promise<boolean> {

@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import type { AppMode } from '../../shared/types/capabilities.js';
 import { newId, nowIso } from '../../shared/types/common.js';
 import type { AppBus } from '../../shared/types/events.js';
-import type { ChatMessage, GenerationRequest } from '../../shared/types/models.js';
+import type { ChatMessage, GenerationRequest, ToolCallSpec } from '../../shared/types/models.js';
 import type { TaskRecord } from '../../shared/types/task.js';
 import type { ToolResult } from '../../shared/types/tools.js';
 import { estimateTokens } from '../../shared/util/text.js';
@@ -143,6 +143,8 @@ export class AgentCore {
       let finalText = '';
       let iterations = 0;
       const writtenFiles: string[] = [];
+      const { provider } = this.providers.chatFor(decision.modelId);
+      const supportsTools = decision.model.capabilities.includes('tool_calling');
 
       while (iterations < MAX_TOOL_ITERATIONS) {
         iterations++;
@@ -150,12 +152,9 @@ export class AgentCore {
           modelId: decision.modelId,
           messages: chatMsgs,
           temperature: cfg.ai.temperature,
-          tools: this.tools.definitions(),
+          tools: supportsTools ? this.tools.definitions() : undefined,
           signal,
         };
-        const { provider } = this.providers.chatFor(decision.modelId);
-        const supportsTools = decision.model.capabilities.includes('tool_calling');
-        if (!supportsTools) delete req.tools;
 
         const result = await this.generateWithRetry(provider.adapter, req, signal, task.id, input, assistantMsgId);
         if (result.error) throw AppError.provider(`Model failed: ${result.error}`);
@@ -165,55 +164,57 @@ export class AgentCore {
         if (!supportsTools || result.toolCalls.length === 0) break;
 
         chatMsgs.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls, id: newId('msg') });
-        for (const call of result.toolCalls) {
-          const mutatingNames = ['delete_path', 'patch_file', 'write_file', 'move_path'];
-          if (mutatingNames.includes(call.name) && typeof call.args.path === 'string') {
-            // risky modification -> checkpoint the target first (§37)
-            const abs = this.resolveInScope(call.args.path, 'write');
-            if (abs && existsSync(abs)) {
-              const ck = await this.checkpoints.createForFiles(`auto before ${call.name}`, [abs], task.id).catch(() => null);
-              if (ck) {
-                this.tasks.recordCheckpoint(task.id, ck.id);
-                this.bus.emit({ type: 'checkpoint.created', checkpointId: ck.id, taskId: task.id, files: ck.fileCount });
-              }
-            }
-          }
-          const toolCtx = this.makeToolCtx(task.id, signal);
-          const toolResult: ToolResult = await this.tools.call(call.name, call.args, toolCtx);
-          this.tasks.recordTool(task.id, call.name);
-          if (
-            (call.name === 'write_file' || call.name === 'patch_file' || call.name === 'make_dir') &&
-            toolResult.ok &&
-            typeof call.args.path === 'string'
-          ) {
-            writtenFiles.push(call.args.path);
-            this.tasks.recordFile(task.id, call.args.path);
-          }
-          chatMsgs.push({
-            role: 'tool',
-            content: JSON.stringify(toModelSafe(toolResult)),
-            toolCallId: call.id,
-            name: call.name,
-            id: newId('msg'),
-          });
-        }
+        await this.executeToolCalls(result.toolCalls, task.id, signal, writtenFiles, chatMsgs);
         if (signal.aborted) throw new Error('cancelled');
       }
 
-      // ---- verification (step 10) ----
+      // ---- verification (step 10) + ONE bounded repair pass (§15) ----
       let verificationResult: import('../../shared/types/task.js').VerificationResult | undefined;
-      if (writtenFiles.length > 0 || taskClass === 'debugging' || taskClass === 'coding') {
+      const needsVerify = writtenFiles.length > 0 || taskClass === 'debugging' || taskClass === 'coding';
+      const verifyPlan = (): import('./verification.js').VerificationPlan => {
+        const proj = this.projects.list().find((p) => p.id === input.projectId);
+        return input.projectId
+          ? { kind: 'code_change', cwd: proj?.path ?? process.cwd(), commands: proj?.testCommands ?? [] }
+          : { kind: 'file_written', path: this.resolveInScope(writtenFiles[0] ?? '', 'read') ?? writtenFiles[0] ?? '' };
+      };
+      if (needsVerify) {
         this.tasks.transition(task.id, 'verifying', {}, 'verify');
-        verificationResult = await this.verification.verify(
-          input.projectId
-            ? {
-                kind: 'code_change',
-                cwd: this.projects.list().find((p) => p.id === input.projectId)?.path ?? process.cwd(),
-                commands: this.projects.list().find((p) => p.id === input.projectId)?.testCommands ?? [],
-              }
-            : { kind: 'file_written', path: this.resolveInScope(writtenFiles[0] ?? '', 'read') ?? writtenFiles[0] ?? '' },
-          task.id,
-        );
+        verificationResult = await this.verification.verify(verifyPlan(), task.id);
+        let attemptsLeft = 1; // bounded: no infinite retry loops (§15)
+        while (verificationResult.attempted && !verificationResult.passed && supportsTools && attemptsLeft > 0 && !signal.aborted) {
+          attemptsLeft--;
+          finalText += `\n\n[verification] failed; one bounded repair attempt: ${verificationResult.details.slice(0, 300)}`;
+          chatMsgs.push({
+            id: newId('msg'),
+            role: 'user',
+            createdAt: nowIso(),
+            content: `Verification failed after your changes:\n${verificationResult.details.slice(0, 1500)}\nInspect what is wrong, apply the smallest reasonable fix with the file tools, then briefly state what you changed.`,
+          });
+          try {
+            const repair = await this.generateWithRetry(
+              provider.adapter,
+              {
+                modelId: decision.modelId,
+                messages: chatMsgs,
+                temperature: cfg.ai.temperature,
+                tools: supportsTools ? this.tools.definitions() : undefined,
+                signal,
+              },
+              signal,
+              task.id,
+              input,
+              assistantMsgId,
+            );
+            if (repair.text) finalText += `\n\n[repair] ${repair.text}`;
+            chatMsgs.push({ role: 'assistant', content: repair.text, toolCalls: repair.toolCalls, id: newId('msg') });
+            if (repair.toolCalls.length > 0) await this.executeToolCalls(repair.toolCalls, task.id, signal, writtenFiles, chatMsgs);
+            if (signal.aborted) break;
+            verificationResult = await this.verification.verify(verifyPlan(), task.id);
+          } catch (err) {
+            finalText += `\n\n[repair] could not run: ${(err as Error).message}`;
+            break;
+          }
+        }
         if (!verificationResult.attempted) {
           finalText += `\n\n[verification] not possible here: ${verificationResult.details}`;
         } else if (!verificationResult.passed) {
@@ -361,6 +362,48 @@ export class AgentCore {
     const last = msgs[msgs.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string' && last.content.trim() === currentUserText.trim()) msgs.pop();
     return msgs.map(stripIds);
+  }
+
+  /** Runs model-requested tool calls with checkpoint-before-mutate, then feeds results back. */
+  private async executeToolCalls(
+    calls: ToolCallSpec[],
+    taskId: string,
+    signal: AbortSignal,
+    writtenFiles: string[],
+    chatMsgs: ChatMessage[],
+  ): Promise<void> {
+    for (const call of calls) {
+      const mutatingNames = ['delete_path', 'patch_file', 'write_file', 'move_path'];
+      if (mutatingNames.includes(call.name) && typeof call.args.path === 'string') {
+        // risky modification -> checkpoint the target first (§37)
+        const abs = this.resolveInScope(call.args.path, 'write');
+        if (abs && existsSync(abs)) {
+          const ck = await this.checkpoints.createForFiles(`auto before ${call.name}`, [abs], taskId).catch(() => null);
+          if (ck) {
+            this.tasks.recordCheckpoint(taskId, ck.id);
+            this.bus.emit({ type: 'checkpoint.created', checkpointId: ck.id, taskId, files: ck.fileCount });
+          }
+        }
+      }
+      const toolCtx = this.makeToolCtx(taskId, signal);
+      const toolResult: ToolResult = await this.tools.call(call.name, call.args, toolCtx);
+      this.tasks.recordTool(taskId, call.name);
+      if (
+        (call.name === 'write_file' || call.name === 'patch_file' || call.name === 'make_dir') &&
+        toolResult.ok &&
+        typeof call.args.path === 'string'
+      ) {
+        writtenFiles.push(call.args.path);
+        this.tasks.recordFile(taskId, call.args.path);
+      }
+      chatMsgs.push({
+        role: 'tool',
+        content: JSON.stringify(toModelSafe(toolResult)),
+        toolCallId: call.id,
+        name: call.name,
+        id: newId('msg'),
+      });
+    }
   }
 
   private makeToolCtx(taskId: string, signal: AbortSignal): ToolRunContext {
