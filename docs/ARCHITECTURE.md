@@ -61,6 +61,9 @@ the same code path Electron uses (see `tests/helpers.ts`).
 | System tools (health/memory/knowledge/index/resources) | `main/tools/system.ts` | §49 |
 | Web tools (off by default; kill-switch + `network.access`) | `main/tools/web.ts` | §49 |
 | Extension registry (manifests, deps, contributed tools/importers) | `main/extensions/extensionRegistry.ts` | §42 |
+| Disk extension loader (`manifest.json` + `main.mjs`, `.disabled` markers) | `main/extensions/extensionRegistry.ts` | §42 |
+| PDF/DOCX best-effort parsers (no deps, honest failure) | `main/files/parsePdf.ts`, `parseDocx.ts` | §12 |
+| whisper.cpp / local-TTS HTTP adapters | `main/providers/adapters/voiceServers.ts` | §24 |
 | Path sandbox | `main/security/fsSafe.ts` | §11/§35 |
 | Agent loop (14 controlled steps, bounded retries, checkpoint-before-mutate) | `main/agent/agentCore.ts` | §8/§14/§15 |
 | Classification + plan + clarification policy | `main/agent/planner.ts` | §8/§57/§58 |
@@ -127,3 +130,10 @@ grant.
 - **Idle unload (§56):** every chat/embedding use stamps a timestamp; a
   maintenance timer asks providers to unload models idle beyond
   `performance.modelIdleUnloadMinutes` (0 = off; Ollama `keep_alive:0`, mock records calls).
+
+## Language behaviour
+
+`general.language` (default `de`) is a first-class part of the system prompt —
+the model answers in German unless the user writes another language, code stays
+untranslated. STT inherits the same language tag; TTS voice selection via
+`voice.voiceName`. Set to `off` to disable the instruction entirely.

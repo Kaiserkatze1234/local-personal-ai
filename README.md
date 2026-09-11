@@ -24,6 +24,9 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
   actually provide them; clear explanations when it cannot (never fake it).
 - **Optional internet layer** (documentation lookup) — off by default, gated
   by both a settings kill-switch and the per-request permission.
+- **German-first**: the AI answers in German by default (`general.language`,
+  mirrors the user otherwise); whisper.cpp and OpenAI-compatible TTS speak and
+  listen locally; screen recordings and PDF/DOCX documents are ingestable.
 - **Extensions** with validated manifests (capabilities, permissions,
   dependencies) can contribute tools and file importers without core edits.
 - **Dictation & speech**: push-to-talk hotkey fills the composer, 🔊 reads
