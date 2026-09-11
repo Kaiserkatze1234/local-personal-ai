@@ -40,7 +40,7 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 ```bash
 npm install
 npm run dev          # vite + rebuilt main + electron
-npm test             # 43 integration tests against the real core (no Electron needed)
+npm test             # 76 integration tests against the real core (no Electron needed)
 npm run typecheck    # node + web projects
 npm run lint         # biome
 npm run build        # dist/main, dist/preload, dist/renderer
@@ -96,3 +96,21 @@ testing and is always labeled as not real AI.
 2. Dev mode: `npm install` → `npm run dev` (Electron + Vite with hot reload).
 3. Installer: `npm run dist` → `release/Local Personal AI-Setup-*.exe` (x64/ARM64) or the portable `.exe`.
 4. First start walks you through provider detection, model choice, permissions and performance profile. Data lives in `%APPDATA%/lpai` — delete that folder for a full reset; nothing else is written.
+
+### Start it by opening one thing
+
+You do not need a separate habit of "launching the app". After installing (the NSIS setup,
+never the portable exe, registers it):
+
+- Right-click a `.txt/.md/.log/.json/.csv/.tsv/.html/.pdf/.docx` file → **Öffnen mit… → Local Personal AI**.
+  The document is parsed and imported into your knowledge base, the chat window opens on top —
+  ask about it right away. Re-opening the same path refreshes the entry instead of duplicating it.
+- If the app is already running (or hidden in the tray), "Open with" feeds the *existing* window —
+  no second instance; the window surfaces with an import notice.
+- You can also **drag a file onto the window** anywhere — same import route.
+- Double-click as *default* app: set it yourself per file via "Öffnen mit… → Immer diese App" —
+  the installer deliberately never hijacks your default handlers.
+- The portable `.exe` works for "open with" too: choose it once via "Andere Apps auf meinem
+  Computer durchsuchen…" — Windows then launches it with the file path as argv, which the app
+  consumes directly; no registry entry needed. (Drag & drop and the in-app import dialog work
+  in every case.)

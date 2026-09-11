@@ -46,12 +46,23 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   "global hotkey registration not yet wired" (assert-less replace missed it in pass 2);
   hotkeys are wired and verified. Same sweep: re-verify every status line gained an
   asserted update.
+- [x] **[code] Start the app by opening one thing (fifth pass).** Launch-with-file from
+  Explorer ("Öffnen mit…", double-click once chosen) via argv + `second-instance` +
+  macOS `open-file` → `CoreApp.openFiles`; shared `importFilePath` route with
+  refresh-in-place and `file.opened` events; drag & drop through
+  `webUtils.getPathForFile`; non-hijacking `build/installer.nsh` registration.
+  Covered by `tests/open-file.test.ts` (76/76 overall). The NSIS registry behavior itself
+  is in §B (needs Windows to verify).
 
 ## B. Needs a Windows box / real environment (no code gap)
 
-- [ ] **[hw] §16 — Produce the installer:** `npm run dist` on Windows; add a real
-  `build/icon.ico` (yml comment says it falls back to the Electron icon); smoke-test
-  NSIS x64 + ARM64 + portable, data-dir persistence, uninstall keeping app data.
+- [ ] **[hw] §16 — Produce the installer:** `npm run dist` on Windows (icons are
+  committed: `build/icon.ico` multi-size + `icon.png`; `build/installer.nsh` carries the
+  "Öffnen mit…" registration). Smoke-test on a real machine: NSIS x64 + ARM64 + portable,
+  app appears in the Explorer "Open with" list for the supported extensions *without*
+  changing default handlers, "Open with → Local Personal AI" launches (or surfaces) the
+  window and shows the import notice, uninstall removes the `Applications\<exe>` key and
+  keeps the data dir.
 - [ ] **[hw] §23/§24 — Desktop feel checks:** overlay hotkey conflicts, click-through in
   games (low-level `forward:true` behavior), DWM per-monitor scaling at 125–250 %,
   `MediaRecorder` device defaults, global-shortcut while other apps hold focus.

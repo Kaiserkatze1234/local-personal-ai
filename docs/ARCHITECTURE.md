@@ -74,6 +74,8 @@ the same code path Electron uses (see `tests/helpers.ts`).
 | Skills + learning events (promote only after threshold + review) | `main/skills/skillService.ts` | §18/§19/§65 |
 | Projects (detect, incremental index, brief, ranked files) | `main/projects/projectService.ts` | §13/§54 |
 | Ingestion adapters (md/txt/json/csv/html/code; pdf/docx honest) | `main/files/importers.ts` | §12/§62 |
+| "Open with" launch: argv → file paths (per-arg Win/POSIX semantics, pure) | `main/launchFiles.ts` | §47/§62 |
+| Installer "Open with" registration — Applications\...\SupportedTypes, no default-handler hijack | `build/installer.nsh` | §16 |
 | Global metadata file index (opt-in roots only) | `main/indexing/globalFileIndex.ts` | §31 |
 | Background queue (priorities, pause under pressure/generation) | `main/indexing/backgroundQueue.ts` | §40/§41/§55 |
 | Checkpoints (manifest+hashes, restore is itself checkpointed) | `main/checkpoints/checkpointService.ts` | §37 |

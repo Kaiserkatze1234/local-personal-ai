@@ -22,7 +22,7 @@ Windows/desktop runtime or external service to exercise.
 | 13 — Proactive | assist when strongly relevant, never annoying | **done** | `proactive/` rules on real events (build.failed, provider loss, job done), confidence gate, hourly budget, quiet hours, 3×ignore→auto-mute |
 | 14 — Optimization | measure, then optimize actual bottlenecks | **done** (machine-specific numbers pending) | resource sampling + LOW_RESOURCE policy + generation-pauses-indexing + prefer-small routing + **§56 idle model unloading (tracked usage, provider unloadModel)** + batched file-index writes (one fsync per 500-row tx) + single-query conversation list (verified, not rewritten); latency/throughput numbers on target hardware still to be collected |
 | 15 — Recovery & hardening | failures produce understandable recovery | **done** | corrupt-config→defaults+backup, db error surfaced in health, provider failure→failed task with recovery hints, boot→interrupted tasks `paused` w/ rerun/discard, malformed tool args tolerated, timeouts everywhere; **§15 bounded repair loop: failed verification feeds back into exactly ONE tool-enabled repair pass + re-verify, then honest reporting** |
-| 16 — Installer | end user needs no source code | **done** (run `npm run dist` on Windows) | `electron-builder.yml`: NSIS **x64 + ARM64** + portable variant, custom install dir, start-menu/desktop shortcuts, app data preserved on uninstall, `deleteAppDataOnUninstall: false` (local-first); first-run wizard (provider detect→role binding→permissions→perf profile). Producing the actual `.exe` is a Windows-machine command |
+| 16 — Installer | end user needs no source code | **done** (run `npm run dist` on Windows) | `electron-builder.yml`: NSIS **x64 + ARM64** + portable variant, custom install dir, start-menu/desktop shortcuts, app data preserved on uninstall, `deleteAppDataOnUninstall: false` (local-first); `build/installer.nsh` registers Explorer "Öffnen mit…" via `Applications\…\SupportedTypes` — deliberately not default-handler takeover; first-run wizard (provider detect→role binding→permissions→perf profile). Producing the actual `.exe` is a Windows-machine command |
 
 ## Second build pass additions
 
@@ -52,6 +52,34 @@ Windows/desktop runtime or external service to exercise.
   "open export location" reveals (honest in headless mode).
 - **Windows icons:** λ icon generated at `build/icon.png|ico` (multi-size),
   wired into BrowserWindow, Tray, and the installer.
+
+## Fifth build pass — start the app by opening one thing
+
+- **Launch-with-file (Windows "Öffnen mit…" / double-click after choosing the
+  app):** `main/launchFiles.ts` extracts real document paths from argv —
+  exe path, Chromium switches and `electron .` dev noise are filtered, Win
+  vs POSIX path semantics picked per argument (testable on any host).
+  `index.ts` feeds them through `CoreApp.openFiles` after boot, queues
+  pre-ready ones (incl. macOS `open-file`), and brings the window forward
+  even when startHidden/closeToTray is set.
+- **Already-running case:** `second-instance` forwards the new argv → same
+  import route; plain relaunch still just focuses/restores the window.
+- **Shared import route:** dialog, drag & drop and launch all run
+  `CoreApp.importFilePath` — refresh-in-place on the same `source_path`
+  (no duplicate docs), per-file `file.opened` event; renderer shows a German
+  notice (Importiert/Aktualisiert + chunk count) and reloads the doc list
+  (`knowledgeVersion` counter).
+- **Drag & drop anywhere:** preload exposes `webUtils.getPathForFile`
+  (the modern, contextIsolation-safe API); App.tsx shows a drop veil and
+  imports what resolves to a disk path, honestly rejects data-only drops.
+- **Installer side:** `build/installer.nsh` (electron-builder auto-include)
+  registers `HK(CU|LM)\Software\Classes\Applications\<exe>` with
+  `SupportedTypes` + open command — the app appears in "Öffnen mit…" for
+  txt/md/markdown/log/json/csv/tsv/html/htm/pdf/docx (both cases, which is
+  what SupportedTypes matching requires) and un-registers itself on
+  uninstall. `fileAssociations` in the yml was deliberately NOT used: the
+  shipped macro overwrites `.ext` default handlers, which would hijack the
+  user's Notepad/browser defaults.
 
 ## Notes for whoever continues
 
