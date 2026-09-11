@@ -22,6 +22,13 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 - **Learning** from confirmed corrections → skill candidates → your approval.
 - **Vision / screen / overlay / proactive hints** when the machine can
   actually provide them; clear explanations when it cannot (never fake it).
+- **Optional internet layer** (documentation lookup) — off by default, gated
+  by both a settings kill-switch and the per-request permission.
+- **Extensions** with validated manifests (capabilities, permissions,
+  dependencies) can contribute tools and file importers without core edits.
+- **Dictation & speech**: push-to-talk hotkey fills the composer, 🔊 reads
+  answers aloud; overlay, region screen capture and idle model unloading round
+  out the desktop experience.
 
 ## Quick start (dev)
 

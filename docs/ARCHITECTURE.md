@@ -59,11 +59,14 @@ the same code path Electron uses (see `tests/helpers.ts`).
 | File tools (scoped, atomic, binary-safe, patch w/ match counts) | `main/tools/filesystem.ts` | §11/§12 |
 | Command tool (danger scan, tree-kill timeout) | `main/tools/commands.ts` | §36 |
 | System tools (health/memory/knowledge/index/resources) | `main/tools/system.ts` | §49 |
+| Web tools (off by default; kill-switch + `network.access`) | `main/tools/web.ts` | §49 |
+| Extension registry (manifests, deps, contributed tools/importers) | `main/extensions/extensionRegistry.ts` | §42 |
 | Path sandbox | `main/security/fsSafe.ts` | §11/§35 |
 | Agent loop (14 controlled steps, bounded retries, checkpoint-before-mutate) | `main/agent/agentCore.ts` | §8/§14/§15 |
 | Classification + plan + clarification policy | `main/agent/planner.ts` | §8/§57/§58 |
 | Context engine (ranked, budgeted, source-referenced) | `main/agent/contextEngine.ts` | §29/§30/§54/§63 |
 | Verification (never fakes a pass) | `main/agent/verification.ts` | §38 |
+| Bounded verify → repair → re-verify loop (one pass) | `main/agent/agentCore.ts` | §15 |
 | Memory (dedup, candidates→stored, ranked retrieval, compression) | `main/memory/memoryService.ts` | §16/§17/§64/§66 |
 | Skills + learning events (promote only after threshold + review) | `main/skills/skillService.ts` | §18/§19/§65 |
 | Projects (detect, incremental index, brief, ranked files) | `main/projects/projectService.ts` | §13/§54 |
@@ -99,3 +102,28 @@ the same code path Electron uses (see `tests/helpers.ts`).
 Contains: `lpai.db`, `config.json`, `logs/app.log`, `checkpoints/`, `screens/`,
 `diagnostics/`. Nothing outside it is ever written without an explicit tool
 grant.
+
+## Second-pass behaviours worth knowing
+
+- **Internet (§49):** `http_get`/`web_search` are always registered but
+  self-gate on `Settings → Internet`; enabling the layer still does not bypass
+  the `network.access` permission decision. Host allowlist + response-size cap
+  + html stripping are enforced in the tool, not the prompt.
+- **Extensions (§42):** modules provide a manifest (id, name, version,
+  capabilities, permissions, dependencies); activation is validated, dependency
+  checked, and reversible; contributed tools are namespaced and may not use
+  permissions their manifest didn't declare; uninstall disposes and revokes
+  session grants.
+- **Overlay (§23/§46):** global hotkey (re-registered on config change);
+  position/opacity from settings; `lowResourceMode` = click-through,
+  display-only, never takes focus (gaming-friendly); normal mode exposes an
+  "ask about my screen" box that runs through the same chat pipeline.
+- **Voice (§24):** dictation hotkey toggles MediaRecorder capture (press=start,
+  press=stop; `globalShortcut` has no key-up); mic permission is only granted
+  while voice is enabled; 🔊 speak per assistant message; demo STT/TTS exist in
+  the mock provider so the path is testable without hardware.
+- **Region capture (§21):** `screen.capture` accepts an optional rect, cropped
+  via `nativeImage` in the Electron source; thumbnail-space coordinates (1920-wide).
+- **Idle unload (§56):** every chat/embedding use stamps a timestamp; a
+  maintenance timer asks providers to unload models idle beyond
+  `performance.modelIdleUnloadMinutes` (0 = off; Ollama `keep_alive:0`, mock records calls).
