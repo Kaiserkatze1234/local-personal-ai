@@ -136,6 +136,20 @@ Windows/desktop runtime or external service to exercise.
   voice polish and OCR stay conditional with the user's own assessments quoted;
   skill-editor UI polish stays non-blocking. Nothing new built for those.
 
+## Eighth build pass — §24 voice settings take effect
+
+Closed the last unchecked [code] sub-items in the checklist (spec's own §24
+feature list, not new scope): `voice.speed`/`voice.volume` were stored but had
+no audible path. Now `TtsModelContract` carries `appliesSpeed` (a backend that
+synthesizes with speed itself — the Piper-style adapter — declares it, and
+`voice.speak` reports back via `speedApplied` so the player never re-applies
+it); `Audio.volume` is always applied client-side since no server consumes it.
+The policy is pure and tested (`renderer/lib/playback.ts`: clamping, garbage
+input → neutral). Interruption completed: sending a message stops in-flight TTS
+(dictation and a new utterance already did). The "voice selection" checkbox
+turned out to be stale — `voiceName` was already wired through the whole path.
+4 tests in `tests/voice-playback.test.ts`; suite at 90.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

@@ -32,11 +32,15 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
 - [x] **[code] §24 — Voice feature items still missing** (spec's own list):
-  - [ ] `speed`/`volume` settings exist and are stored, but are **not applied** anywhere —
-        renderer should set `Audio.playbackRate` / `Audio.volume` when speaking.
-  - [ ] **Interruption**: starting dictation or sending a new message should stop
-        in-flight TTS audio.
-  - [ ] **Voice selection**: no `voice` id field on the TTS request path/config.
+  - [x] `speed`/`volume` now take effect: the renderer sets `Audio.volume` (never consumed
+        server-side) and `Audio.playbackRate` only when the bound backend did NOT synthesize with
+        speed — `voice.speak` returns `speedApplied` (Piper-style adapters declare
+        `tts.appliesSpeed`; pure logic in `src/renderer/lib/playback.ts`, tested in
+        `tests/voice-playback.test.ts`). No double-application: 1.5x stays 1.5x.
+  - [x] **Interruption**: starting dictation and starting a new utterance already stopped
+        in-flight TTS; sending a new message now does too (`stopSpeech()` in `onSend`).
+  - [x] **Voice selection** was already wired end-to-end (`voice.voiceName` config → Settings →
+        Voice field → `TtsRequest.voice` → adapter body); the open checkbox was stale.
   - [ ] Streaming speech output, wake interaction, VAD — "where supported/practical"
         (see section C; push-to-talk itself is done).
 - [x] **[code] §21 — Region-capture UX.** The backend rect passthrough is done
@@ -122,4 +126,4 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
 - Internet layer §49, extension manifest/permission validation §42 (in-process),
   bounded repair loop §15, idle model unload §56, PTT hotkey plumbing §24, overlay
   modes/opacity/positions §23/§46, installer config contents §16, batched index writes
-  §55 — all implemented and covered by the 52-test suite.
+  §55 — all implemented and covered by the test suite.
