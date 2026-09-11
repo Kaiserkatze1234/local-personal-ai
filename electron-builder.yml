@@ -1,0 +1,24 @@
+# electron-builder config — Phase 16 (Windows installer)
+# Docs: https://www.electron.build — run via `npm run dist` on Windows.
+appId: ai.local.personalai
+productName: Local Personal AI
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+npmRebuild: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Local Personal AI
