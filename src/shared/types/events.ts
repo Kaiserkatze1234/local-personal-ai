@@ -39,7 +39,19 @@ export type AppEvent =
   | { type: 'resource.mode'; mode: ResourceMode; reason: string }
   | { type: 'build.failed'; projectId?: string; command: string; detail: string }
   | { type: 'memory.candidate'; entryId: string; preview: string }
-  | { type: 'log.entry'; level: 'debug' | 'info' | 'warn' | 'error'; subsystem: string; message: string };
+  | { type: 'log.entry'; level: 'debug' | 'info' | 'warn' | 'error'; subsystem: string; message: string }
+  /** A file reached the app from outside: "Open with" launch, second instance, drag & drop, dialog. */
+  | {
+      type: 'file.opened';
+      path: string;
+      ok: boolean;
+      message: string;
+      name?: string;
+      kind?: string;
+      chunks?: number;
+      /** true when re-importing the same path refreshed an existing document */
+      updated?: boolean;
+    };
 
 /**
  * Structural contract services use (implemented by main/core/eventBus).

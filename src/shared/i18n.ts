@@ -78,6 +78,15 @@ export const DE: Record<string, string> = {
     'Noch nichts gelernt. Bestätige nützliche Korrekturen bei der Arbeit, Kandidaten erscheinen hier.',
   'Projects & knowledge': 'Projekte & Wissen',
   'record(s)': 'Eintrag/Einträge',
+  // drag & drop / external file open
+  'Drop files to import': 'Dateien zum Importieren ablegen',
+  'Text, Markdown, PDF, DOCX, code — the AI can use them afterwards': 'Text, Markdown, PDF, DOCX, Code — die KI nutzt sie anschließend',
+  'Dropped items are not files on disk.': 'Die abgelegten Elemente sind keine Dateien auf der Festplatte.',
+  'Import failed': 'Import fehlgeschlagen',
+  Updated: 'Aktualisiert',
+  Imported: 'Importiert',
+  chunks: 'Chunks',
+  'Import file…': 'Datei importieren…',
   // settings cards
   'AI providers & models': 'KI-Provider & Modelle',
   'Model roles': 'Modell-Rollen',

@@ -6,7 +6,8 @@
  */
 
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { newId, nowIso } from '../shared/types/common.js';
 import type { AppConfig, DeepPartial, LogLevel } from '../shared/types/config.js';
 import type { AppEvent } from '../shared/types/events.js';
 import { AgentCore } from './agent/agentCore.js';
@@ -18,6 +19,7 @@ import { EventBus } from './core/eventBus.js';
 import { type LogEntry, Logger } from './core/logger.js';
 import { HealthService } from './diagnostics/healthService.js';
 import { ExtensionRegistry } from './extensions/extensionRegistry.js';
+import { ingestFile } from './files/importers.js';
 import { BackgroundJobQueue } from './indexing/backgroundQueue.js';
 import { GlobalFileIndex } from './indexing/globalFileIndex.js';
 import { MemoryService } from './memory/memoryService.js';
@@ -333,6 +335,72 @@ export class CoreApp {
     this.jobs.setConcurrency(next.performance.backgroundConcurrency);
     void this.providers.refreshProvider('ollama').catch(() => undefined);
     return next;
+  }
+
+  /**
+   * §12/§62 — ingest one file by path. Shared by every route a file can
+   * reach the app: import dialog, drag & drop, and "Open with" launches.
+   * Re-importing the same path refreshes the existing document instead of
+   * creating a duplicate. Always emits `file.opened` so the UI can report
+   * honestly (incl. failures such as scanned PDFs without a text layer).
+   */
+  importFilePath(path: string): {
+    ok: boolean;
+    message: string;
+    name?: string;
+    kind?: string;
+    chunks?: number;
+    updated?: boolean;
+  } {
+    const log = this.log.child('knowledge');
+    const result = ingestFile(path);
+    if (!result.ok) {
+      const message = result.unavailableReason ?? 'Import failed.';
+      log.warn(`import failed for ${basename(path)}: ${message}`);
+      this.bus.emit({ type: 'file.opened', path, ok: false, message });
+      return { ok: false, message };
+    }
+    const existing = this.store.get1<{ id: string }>(`SELECT id FROM knowledge_documents WHERE source_path = ?`, path);
+    const id = existing?.id ?? newId('kdoc');
+    this.knowledge.addDoc(
+      {
+        id,
+        sourcePath: path,
+        name: result.metadata.name,
+        kind: result.kind,
+        size: result.metadata.sizeBytes,
+        metaJson: JSON.stringify(result.metadata),
+        createdAt: nowIso(),
+      },
+      result.chunks.map((c) => c.text),
+    );
+    const message = existing
+      ? `Updated ${result.metadata.name} (${result.chunks.length} chunk(s)).`
+      : `Imported ${result.metadata.name} (${result.chunks.length} chunk(s), ${result.kind}).`;
+    log.info(message);
+    this.bus.emit({
+      type: 'file.opened',
+      path,
+      ok: true,
+      message,
+      name: result.metadata.name,
+      kind: result.kind,
+      chunks: result.chunks.length,
+      updated: Boolean(existing),
+    });
+    return {
+      ok: true,
+      message,
+      name: result.metadata.name,
+      kind: result.kind,
+      chunks: result.chunks.length,
+      updated: Boolean(existing),
+    };
+  }
+
+  /** Import several paths sequentially (one event per file). */
+  openFiles(paths: readonly string[]): void {
+    for (const p of paths) this.importFilePath(p);
   }
 
   async dispose(): Promise<void> {

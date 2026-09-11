@@ -25,7 +25,7 @@ export function ProjectsPanel(): ReactElement {
         /* fine without bridge */
       }
     })();
-  }, [s.error]);
+  }, [s.error, s.knowledgeVersion]);
 
   return (
     <div className="panel">
@@ -94,7 +94,7 @@ export function ProjectsPanel(): ReactElement {
       <div className="card">
         <h3>Knowledge import (documents)</h3>
         <div className="row">
-          <button onClick={() => void s.importKnowledge()}>Import file…</button>
+          <button onClick={() => void s.importKnowledge()}>{L('Import file…')}</button>
           <span className="small muted">txt / md / code / json / csv — parsed locally, chunked, searchable by the agent.</span>
         </div>
         {docs.map((d) => (

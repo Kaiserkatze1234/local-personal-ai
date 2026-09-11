@@ -656,3 +656,24 @@ label.check {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* drag & drop import veil (matches the "Open with" file route) */
+.dropveil {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(13, 16, 23, 0.62);
+  pointer-events: none;
+}
+.dropbox {
+  border: 2px dashed #7aa2ff;
+  border-radius: 14px;
+  padding: 30px 46px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #dfe6f3;
+  background: rgba(20, 26, 40, 0.92);
+}

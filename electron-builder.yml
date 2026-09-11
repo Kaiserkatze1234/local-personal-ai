@@ -10,6 +10,13 @@ directories:
 files:
   - dist/**
   - package.json
+# "Start the app by opening one thing": handled by build/installer.nsh
+# (auto-discovered from buildResources). It lists us in Explorer's
+# "Öffnen mit…" for the formats our §12 importers parse, WITHOUT stealing
+# default-handler status for .txt/.json/... — deliberately not the
+# top-level `fileAssociations` option, whose bundled NSIS macro overwrites
+# `Software\Classes\<.ext>` defaults. Launched paths land in argv and
+# src/main/launchFiles.ts turns them into knowledge imports.
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 npmRebuild: true

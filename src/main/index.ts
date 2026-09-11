@@ -4,6 +4,7 @@
  * are testable without Electron (vitest boots CoreApp directly).
  */
 
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   app,
@@ -27,6 +28,7 @@ import { CoreApp, type HostBindings } from './app.js';
 import { OverlayController } from './electron/overlayController.js';
 import { RegionPicker } from './electron/regionPicker.js';
 import { createElectronScreenSource } from './electron/screenElectron.js';
+import { extractLaunchFiles } from './launchFiles.js';
 
 const gotLock = app.requestSingleInstanceLock({ id: 'main' });
 let core: CoreApp | null = null;
@@ -35,6 +37,33 @@ let overlay: OverlayController | null = null;
 let tray: Tray | null = null;
 let appQuitting = false;
 let createWindowRef: (() => void) | null = null;
+
+function isFilePath(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Files arriving from outside: launch argv (Explorer file association /
+ * "Öffnen mit"), second-instance argv, macOS open-file. Queued until the
+ * CoreApp is up, imported straight away once it is — each file emits
+ * `file.opened` on the bus so every window reports it. Opening a file is
+ * an explicit act, so the main window comes forward even when the app is
+ * configured to start hidden or minimize to tray.
+ */
+let pendingFiles: string[] = [];
+function deliverFiles(paths: readonly string[]): void {
+  if (paths.length === 0) return;
+  if (!core) {
+    pendingFiles = pendingFiles.concat(paths);
+    return;
+  }
+  core.openFiles(paths);
+  showMain();
+}
 
 function showMain(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -223,6 +252,18 @@ async function boot(): Promise<void> {
   // Windows autostart registration (HKCU Run) follows the config
   app.setLoginItemSettings({ openAtLogin: core.getConfig().general.autostart, args: [] });
 
+  // "Start the app by opening a file": the installer registers file
+  // associations, so Explorer hands the document path to argv[1].
+  // Anything collected pre-ready (macOS open-file) rides along here.
+  deliverFiles(
+    extractLaunchFiles(process.argv, {
+      cwd: process.cwd(),
+      exe: process.execPath,
+      appDir: app.getAppPath(),
+      isFile: isFilePath,
+    }).concat(pendingFiles.splice(0)),
+  );
+
   // graceful shutdown: flush config + task state
   app.on('before-quit', (e) => {
     appQuitting = true;
@@ -250,7 +291,24 @@ if (!gotLock) {
       app.exit(1);
     });
 
-  app.on('second-instance', () => showMain());
+  // "Öffnen mit…" while already running: no second window — the forwarded
+  // argv is imported into this instance and the window comes to the front.
+  app.on('second-instance', (_event, argv, cwd) => {
+    const files = extractLaunchFiles(argv, {
+      cwd: cwd || process.cwd(),
+      exe: process.execPath,
+      appDir: app.getAppPath(),
+      isFile: isFilePath,
+    });
+    if (files.length === 0) showMain();
+    else deliverFiles(files);
+  });
+
+  // macOS delivers double-clicked documents via an event instead of argv.
+  app.on('open-file', (event, path) => {
+    event.preventDefault();
+    deliverFiles([path]);
+  });
 
   process.on('unhandledRejection', (reason) => {
     console.error('[unhandledRejection]', reason);

@@ -3,7 +3,7 @@
  * nodeIntegration off (§35). Method names are validated against a static
  * allowlist; everything else stays in the main process.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const ALLOWED_METHODS = new Set<string>([
   'app.info',
@@ -94,6 +94,18 @@ const api = {
     const listener = (_e: Electron.IpcRendererEvent, action: string): void => callback(action === 'toggle' ? 'toggle' : 'toggle');
     ipcRenderer.on('lpai:ptt', listener);
     return () => ipcRenderer.removeListener('lpai:ptt', listener);
+  },
+  /**
+   * Drag & drop: map a dropped DOM File to its absolute disk path, or ''
+   * when it has none (text/data drops). Runs in the preload realm where
+   * webUtils is available; the renderer never touches Node/Electron.
+   */
+  getPathForFile(file: unknown): string {
+    try {
+      return webUtils.getPathForFile(file as never);
+    } catch {
+      return '';
+    }
   },
 };
 

@@ -169,29 +169,15 @@ export class Api {
         return app.memory.search(String(args[0]));
 
       case 'knowledge.import': {
+        // args[0] absent -> open a pick dialog (the UI path). With a path it
+        // is a direct import (drag & drop; "Open with" forwards via events).
         let p = args[0] ? String(args[0]) : '';
         if (!p) {
           const picked = await app.host.pickFile?.();
           if (!picked) throw AppError.invalidState('No file selected.');
           p = picked;
         }
-        const { ingestFile } = await import('./files/importers.js');
-        const result = ingestFile(p);
-        if (!result.ok) return { ok: false, message: result.unavailableReason ?? 'Import failed.' };
-        const id = newId('kdoc');
-        app.knowledge.addDoc(
-          {
-            id,
-            sourcePath: p,
-            name: result.metadata.name,
-            kind: result.kind,
-            size: result.metadata.sizeBytes,
-            metaJson: JSON.stringify(result.metadata),
-            createdAt: nowIso(),
-          },
-          result.chunks.map((c) => c.text),
-        );
-        return { ok: true, message: `Imported ${result.metadata.name} (${result.chunks.length} chunk(s), ${result.kind}).` };
+        return app.importFilePath(p);
       }
       case 'knowledge.list':
         return app.store.all(

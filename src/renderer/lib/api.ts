@@ -14,6 +14,7 @@ interface Bridge {
   onEvent(cb: (e: unknown) => void): () => void;
   onOverlayText?(cb: (t: string) => void): () => void;
   onPtt?(cb: (a: 'toggle') => void): () => void;
+  getPathForFile?(file: unknown): string;
 }
 
 declare global {
@@ -56,4 +57,11 @@ export function onOverlayText(cb: (t: string) => void): () => void {
 export function onPtt(cb: (a: 'toggle') => void): () => void {
   if (!bridge?.onPtt) return () => undefined;
   return bridge.onPtt(cb);
+}
+
+/** Absolute disk path of a dropped File, or null (data drops, no bridge). */
+export function droppedFilePath(file: File): string | null {
+  if (!bridge?.getPathForFile) return null;
+  const p = bridge.getPathForFile(file);
+  return p && p.length > 0 ? p : null;
 }

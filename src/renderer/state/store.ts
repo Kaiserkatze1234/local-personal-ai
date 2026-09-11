@@ -15,6 +15,7 @@ import type { PermissionDecision, PermissionRequest, PermissionState } from '../
 import type { Skill } from '../../shared/types/skills.js';
 import type { TaskRecord } from '../../shared/types/task.js';
 import * as api from '../lib/api.js';
+import { L } from '../lib/i18n.js';
 
 export interface UiMessage extends ChatMessage {
   streaming?: boolean;
@@ -49,6 +50,8 @@ interface AppState {
   health: HealthReport | null;
   extensionPanels: { id: string; title: string; markdown: string }[];
   notices: ProactiveSuggestion[];
+  /** Bumped whenever knowledge_documents change, so panels can reload. */
+  knowledgeVersion: number;
   error: string | null;
 
   init(): Promise<void>;
@@ -71,6 +74,10 @@ interface AppState {
   addMemory(content: string): Promise<void>;
   searchMemory(q: string): Promise<void>;
   importKnowledge(): Promise<void>;
+  /** Import one known path (drag & drop, deep-link from "Open with"). */
+  importPath(path: string): Promise<void>;
+  /** Resolve dropped DOM files to disk paths and import them. */
+  openDropped(files: FileList | File[]): Promise<void>;
   toggleSkill(id: string, enabled: boolean): Promise<void>;
   deleteSkill(id: string): Promise<void>;
   addProject(): Promise<void>;
@@ -115,6 +122,7 @@ export const useStore = create<AppState>((set, get) => ({
   health: null,
   extensionPanels: [],
   notices: [],
+  knowledgeVersion: 0,
   error: null,
 
   async init() {
@@ -297,12 +305,37 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async importKnowledge() {
+    // Result (success or an honest failure) is reported via the file.opened
+    // event so every import path — dialog, drag & drop, "Open with" — shows
+    // the same notice. Only IPC-level errors land in `error`.
     try {
-      const r = await api.call('knowledge.import');
-      set({ error: r.ok ? null : r.message });
+      await api.call('knowledge.import');
     } catch (err) {
       set({ error: err instanceof api.ApiError ? err.message : String(err) });
     }
+  },
+
+  async importPath(path) {
+    try {
+      await api.call('knowledge.import', path);
+    } catch (err) {
+      set({ error: err instanceof api.ApiError ? err.message : String(err) });
+    }
+  },
+
+  async openDropped(files) {
+    const paths: string[] = [];
+    let nonFiles = 0;
+    for (const f of Array.from(files)) {
+      const p = api.droppedFilePath(f);
+      if (p) paths.push(p);
+      else nonFiles += 1;
+    }
+    if (paths.length === 0) {
+      if (nonFiles > 0) set({ error: L('Dropped items are not files on disk.') });
+      return;
+    }
+    for (const p of paths) void get().importPath(p);
   },
 
   async toggleSkill(id, enabled) {
@@ -421,6 +454,31 @@ export const useStore = create<AppState>((set, get) => ({
       case 'proactive.suggestion':
         set((s) => ({ notices: [...s.notices, e.suggestion].slice(-3) }));
         break;
+      case 'file.opened': {
+        if (!e.ok) {
+          set({ error: `${L('Import failed')}: ${e.message}` });
+          break;
+        }
+        const name = e.name ?? e.path.split(/[\\/]/).pop() ?? e.path;
+        const text = `${e.updated ? L('Updated') : L('Imported')} ${name} · ${e.chunks ?? 0} ${L('chunks')} · ${e.kind ?? ''}`;
+        set((s) => ({
+          notices: [
+            ...s.notices,
+            {
+              id: `file-${String(Date.now())}-${String(Math.floor(Math.random() * 1e6))}`,
+              ruleId: 'file.opened',
+              kind: 'related_files' as const,
+              text,
+              reason: e.path,
+              confidence: 1,
+              action: 'inline' as const,
+            },
+          ].slice(-3),
+        }));
+        void get().loadSidePanels();
+        set((st) => ({ knowledgeVersion: st.knowledgeVersion + 1 }));
+        break;
+      }
       case 'provider.status': {
         set((s) => ({
           providers: s.providers.map((p) => (p.id === (e.health as ProviderHealth).providerId ? { ...p, health: e.health } : p)),

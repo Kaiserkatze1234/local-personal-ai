@@ -25,9 +25,47 @@ const MODES: { id: AppMode; label: string; title: string }[] = [
 export function App(): ReactElement {
   const s = useStore();
   const [panel, setPanel] = useState<Panel>('chat');
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     void s.init();
+  }, []);
+
+  // §62: dropping a file anywhere imports it — same route "Öffnen mit" takes.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (ev: DragEvent): boolean => Boolean(ev.dataTransfer && Array.from(ev.dataTransfer.types).includes('Files'));
+    const onDragOver = (ev: DragEvent): void => {
+      if (hasFiles(ev)) ev.preventDefault();
+    };
+    const onDragEnter = (ev: DragEvent): void => {
+      if (!hasFiles(ev)) return;
+      ev.preventDefault();
+      depth += 1;
+      setDragOver(true);
+    };
+    const onDragLeave = (): void => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragOver(false);
+    };
+    const onDrop = (ev: DragEvent): void => {
+      if (!hasFiles(ev)) return;
+      ev.preventDefault();
+      depth = 0;
+      setDragOver(false);
+      const files = ev.dataTransfer?.files;
+      if (files && files.length > 0) void useStore.getState().openDropped(files);
+    };
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
   }, []);
 
   useEffect(() => {
@@ -139,6 +177,15 @@ export function App(): ReactElement {
 
       <PermissionDialog />
       <Notices />
+      {dragOver && (
+        <div className="dropveil">
+          <div className="dropbox">
+            <div style={{ fontSize: 26 }}>⇩</div>
+            <div>{L('Drop files to import')}</div>
+            <div className="muted small">{L('Text, Markdown, PDF, DOCX, code — the AI can use them afterwards')}</div>
+          </div>
+        </div>
+      )}
       {s.error && (
         <div className="notices" style={{ top: 12, bottom: 'auto', right: 12 }}>
           <div className="notice" style={{ borderLeftColor: 'var(--err)' }}>

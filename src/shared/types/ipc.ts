@@ -99,7 +99,10 @@ export interface InvokeContract {
   'memory.confirm': { args: [id: string]; res: boolean };
   'memory.delete': { args: [id: string]; res: boolean };
   'memory.search': { args: [query: string]; res: MemorySearchHit[] };
-  'knowledge.import': { args: [path?: string]; res: { ok: boolean; message: string } };
+  'knowledge.import': {
+    args: [path?: string];
+    res: { ok: boolean; message: string; name?: string; kind?: string; chunks?: number; updated?: boolean };
+  };
   'knowledge.list': { args: []; res: { id: string; name: string; kind: string; size: number; createdAt: string }[] };
   'skills.list': { args: []; res: Skill[] };
   'skills.add': { args: [name: string, description: string, instructions: string]; res: Skill };
