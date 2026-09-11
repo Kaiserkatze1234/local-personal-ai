@@ -40,7 +40,8 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 ```bash
 npm install
 npm run dev          # vite + rebuilt main + electron
-npm test             # 84 integration tests against the real core (no Electron needed)
+npm test             # integration tests against the real core (Electron optional; needs Node 22+)
+npm run bench -- --demo   # self-check the §14 perf harness (no real model needed)
 npm run typecheck    # node + web projects
 npm run lint         # biome
 npm run build        # dist/main, dist/preload, dist/renderer
@@ -121,3 +122,30 @@ never the portable exe, registers it):
   Computer durchsuchen…" — Windows then launches it with the file path as argv, which the app
   consumes directly; no registry entry needed. (Drag & drop and the in-app import dialog work
   in every case.)
+
+### Measure it on your own machine (§14)
+
+The one thing a benchmark can't fake is your hardware. With the app closed, run:
+
+```bash
+npm run bench                # against YOUR configured providers + data dir
+```
+
+It times, in order: provider health (adapter-reported latency), raw generation latency **and real
+tokens/sec** (from Ollama/OpenAI-compatible usage counters), an end-to-end chat turn including
+time-to-first-token, embedding calls, memory/knowledge retrieval over your live database, SQLite
+WAL insert throughput, a CPU/RAM snapshot, and the idle-unload round trip with Ollama's `/api/ps`
+resident-MiB **before vs. after** — i.e. proof of whether unloading a model actually frees VRAM.
+The report is written to `%APPDATA%\lpai\bench\report-*.md` (next to the logs) as a Markdown table
+you can paste into an issue. `-- --demo` runs the same harness against the built-in mock core —
+useful to confirm the tooling works, meaningless for hardware conclusions. Tune with
+`-- --turns=5 --prompt="..."`.
+
+### Recording analysis: what "real testing" covers
+
+`npm run test` includes `tests/recording-ffmpeg.test.ts`, which drives the §22 pipeline against
+**actual ffmpeg binaries** (generates a real video, verifies ffprobe metadata, asserts the extracted
+frames are genuine JPEGs and that their bytes reach the vision seam, then checks the stitched
+summary). To enable it locally: `npm i --no-save ffmpeg-static ffprobe-static` (skips automatically
+otherwise). What tests cannot substitute: summary *quality* — that needs your GPU + a real vision
+model (`ollama pull llava` or `qwen2.5-vl`), then the 🎬 button on a screen recording of your own.

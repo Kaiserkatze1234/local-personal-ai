@@ -15,12 +15,12 @@ Windows/desktop runtime or external service to exercise.
 | 6 — Project/coding engine | inspect & modify a real project, verify changes | **done** | `projects/projectService` (detect, incremental index, brief), patch tool, `checkpoints/`, `verification` runs project test commands |
 | 7 — Memory & knowledge | reuse past knowledge without loading all history | **done** | `memory/` (ranked retrieval, dedup, compression, candidates→review), `files/importers` + knowledge chunks, conversation FTS search |
 | 8 — Skills & learning | repeated workflows become reusable skills | **done** | `skills/` (learning events, promotion threshold, user review, toggle/delete, auto-select); correction API recorded; skill UI minimal (prompt-dialog editor) |
-| 9 — Multimodal | supported models analyze visual context | **done** (runtime-dependent) | vision routing, ephemeral + **region** capture (drag-select window), image attachments, **real PDF/DOCX importers** (text layer / document.xml — honest failure otherwise), **§22 recording pipeline now reachable from the UI** (🎬 → pick → adaptive frames → summary); ffmpeg/vision presence still probed, never assumed |
+| 9 — Multimodal | supported models analyze visual context | **done** (runtime-dependent) | vision routing, ephemeral + **region** capture (drag-select window), image attachments, **real PDF/DOCX importers** (text layer / document.xml — honest failure otherwise), **§22 recording pipeline now reachable from the UI** (🎬 → pick → adaptive frames → summary); ffmpeg/vision presence still probed, never assumed; pipeline E2E-validated with real ffmpeg binaries (7th pass) |
 | 10 — Voice | local voice path with supported backend | **done** (backend-dependent) | role-bound STT/TTS + demo backends + **shipped local adapters: whisper.cpp HTTP (STT) and OpenAI-compatible /v1/audio/speech (TTS)**, auto-registered from Settings base URLs; dictation hotkey, speak-aloud with interruption (new utterance/dictation stops playback), voice selection + speed/volume passed to backend, STT language follows general.language |
 | 11 — Prompt assistant | improve prompts without full-agent-per-keystroke | **done** | heuristic analysis (zero model calls), debounce client + throttle server, chips with insert/ignore, settings switch, optional small-model pass |
 | 12 — Overlay | works without disturbing desktop use | **done** (needs Windows to feel) | frameless/transparent/always-on-top card; **global hotkey toggle re-registered on config change**; position/opacity settings; gaming mode = click-through display-only, normal mode = interactive with screen-ask box; destroy-on-hide = zero idle cost |
 | 13 — Proactive | assist when strongly relevant, never annoying | **done** | `proactive/` rules on real events (build.failed, provider loss, job done), confidence gate, hourly budget, quiet hours, 3×ignore→auto-mute |
-| 14 — Optimization | measure, then optimize actual bottlenecks | **done** (machine-specific numbers pending) | resource sampling + LOW_RESOURCE policy + generation-pauses-indexing + prefer-small routing + **§56 idle model unloading (tracked usage, provider unloadModel)** + batched file-index writes (one fsync per 500-row tx) + single-query conversation list (verified, not rewritten); latency/throughput numbers on target hardware still to be collected |
+| 14 — Optimization | measure, then optimize actual bottlenecks | **done** (machine-specific numbers pending) | resource sampling + LOW_RESOURCE policy + generation-pauses-indexing + prefer-small routing + **§56 idle model unloading (tracked usage, provider unloadModel)** + batched file-index writes (one fsync per 500-row tx) + single-query conversation list (verified, not rewritten); latency/throughput numbers collectable on target hardware via `npm run bench` (harness shipped + regression-tested; numbers still to be reviewed) |
 | 15 — Recovery & hardening | failures produce understandable recovery | **done** | corrupt-config→defaults+backup, db error surfaced in health, provider failure→failed task with recovery hints, boot→interrupted tasks `paused` w/ rerun/discard, malformed tool args tolerated, timeouts everywhere; **§15 bounded repair loop: failed verification feeds back into exactly ONE tool-enabled repair pass + re-verify, then honest reporting** |
 | 16 — Installer | end user needs no source code | **done** (run `npm run dist` on Windows) | `electron-builder.yml`: NSIS **x64 + ARM64** + portable variant, custom install dir, start-menu/desktop shortcuts, app data preserved on uninstall, `deleteAppDataOnUninstall: false` (local-first); `build/installer.nsh` registers Explorer "Öffnen mit…" via `Applications\…\SupportedTypes` — deliberately not default-handler takeover; first-run wizard (provider detect→role binding→permissions→perf profile). Producing the actual `.exe` is a Windows-machine command |
 
@@ -106,6 +106,35 @@ Windows/desktop runtime or external service to exercise.
   exactly the documented data dir; boot failures surface in a real error
   dialog instead of a silent double-click; native file dialogs are localized
   via the same i18n table as the chrome.
+
+## Seventh build pass — real-binary validation + measurement tooling (user audit items 2 & 7)
+
+- **§22 recording pipeline validated against REAL ffmpeg/ffprobe.**
+  `tests/recording-ffmpeg.test.ts` generates an actual 6-second video
+  (`lavfi testsrc`, mpeg4), then runs the production path: `status` gate →
+  `probe` (640×480@25fps verified) → adaptive sampling plan (6 frames/1s, not
+  150) → `extractFrames` asserting JPEG magic bytes + real sizes → `summarize`
+  checking every frame's actual base64 reached the model seam and timestamps
+  stitched into the summary — plus the honest failure path for garbage input
+  with ffmpeg PRESENT. Auto-skips unless `npm i --no-save ffmpeg-static ffprobe-static`
+  is installed (dev-only validation deps; CI stays green either way).
+  **This caught a genuine production bug:** `extractFrames` never created its work
+  directory — ffmpeg silently extracted zero frames on every real run (tests had
+  been stubbing around it). Fixed, and analyzed frames are now deleted after
+  each summary instead of leaking into tmp.
+- **§14/§56 numbers are now one command.** `npm run bench` bundles the type-checked
+  `src/main/diagnostics/bench.ts` and runs it headless against the user's LIVE
+  config: provider health latency, raw generation with real usage-token
+  tok/s, E2E `chat.send` + time-to-first-token (stream events), embeddings,
+  memory/knowledge retrieval over the live DB, SQLite WAL insert throughput,
+  CPU/RAM snapshot, and the §56 idle-unload round trip with Ollama
+  `/api/ps` resident-MiB before/after — the "does unload actually free VRAM"
+  proof. Report saved next to the logs (`<dataDir>/bench/report-*.md`).
+  `--demo` = mock core/temp dir; harness regression-covered (`tests/bench.test.ts`).
+- **Audit decisions recorded (this turn):** GUI computer control = explicit Phase 2,
+  "don't start before stability" (user) — CHECKLIST §C now carries the phase label;
+  voice polish and OCR stay conditional with the user's own assessments quoted;
+  skill-editor UI polish stays non-blocking. Nothing new built for those.
 
 ## Notes for whoever continues
 

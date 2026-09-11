@@ -4,7 +4,7 @@
  * ffmpeg + a vision model; either missing => honest UNAVAILABLE (§3.8).
  */
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -97,6 +97,10 @@ export class RecordingAnalysisService {
 
   async extractFrames(videoPath: string, info: RecordingInfo, workDir = join(tmpdir(), `lpai-rec-${Date.now()}`)): Promise<FrameSample[]> {
     const plan = this.planSampling(info);
+    // ffmpeg does not create output directories — without this the pipeline
+    // silently extracted zero frames outside tests (caught by the real-ffmpeg
+    // validation added in tests/recording-ffmpeg.test.ts).
+    mkdirSync(workDir, { recursive: true });
     const out: FrameSample[] = [];
     for (let i = 0; i < plan.count; i++) {
       const at = i * plan.intervalSec;
@@ -126,16 +130,21 @@ export class RecordingAnalysisService {
     if (st.state !== 'OK') return { ok: false, error: `Recording analysis unavailable: ${st.message}.` };
     const info = await this.probe(videoPath);
     if (!info || info.durationSec <= 0) return { ok: false, error: 'Could not read video metadata (is the file valid?).' };
-    const frames = await this.extractFrames(videoPath, info);
+    const workDir = join(tmpdir(), `lpai-rec-${Date.now()}`);
+    const frames = await this.extractFrames(videoPath, info, workDir);
     if (frames.length === 0) return { ok: false, error: 'No frames could be extracted.' };
     const descriptions: string[] = [];
-    for (const f of frames.slice(0, 20)) {
-      const b64 = (await import('node:fs')).readFileSync(f.path).toString('base64');
-      const r = await this.vision.analyzeImages(`${question ?? 'What changed in this frame? 2 bullets max.'}`, [
-        { mimeType: 'image/jpeg', dataBase64: b64 },
-      ]);
-      if ('text' in r) descriptions.push(`[${f.atSec.toFixed(0)}s] ${r.text.trim()}`);
-      else return { ok: false, error: r.unavailable };
+    try {
+      for (const f of frames.slice(0, 20)) {
+        const b64 = (await import('node:fs')).readFileSync(f.path).toString('base64');
+        const r = await this.vision.analyzeImages(`${question ?? 'What changed in this frame? 2 bullets max.'}`, [
+          { mimeType: 'image/jpeg', dataBase64: b64 },
+        ]);
+        if ('text' in r) descriptions.push(`[${f.atSec.toFixed(0)}s] ${r.text.trim()}`);
+        else return { ok: false, error: r.unavailable };
+      }
+    } finally {
+      rmSync(workDir, { recursive: true, force: true }); // extracted JPEGs are transient
     }
     return {
       ok: true,

@@ -42,6 +42,13 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
 - [x] **[code] §21 — Region-capture UX.** The backend rect passthrough is done
   (`screen.capture(rect?)` → `nativeImage.crop`), but nothing produces a rect: no
   drag-to-select or active-window capture in the UI. Backend + UI are the remaining half.
+- [x] **[code] Seventh pass — real-binary validation + measurement tooling (user-audit items 2 and 7).**
+  Recording pipeline now verified against REAL ffmpeg/ffprobe (`tests/recording-ffmpeg.test.ts`: generated
+  video → probe → adaptive sampling → real JPEG extraction → per-frame vision seam → stitched summary;
+  auto-skips unless `npm i --no-save ffmpeg-static ffprobe-static` is present). That validation caught and
+  fixed two production bugs: `extractFrames` never created its work dir (real-world: zero frames, always)
+  and extracted frames leaked in tmp. §14/§56 numbers became a command: `npm run bench`
+  (`src/main/diagnostics/bench.ts`, harness covered by `tests/bench.test.ts`).
 - [x] **[code] Docs fix — stale PHASE_MAP row.** The `12 — Overlay` row still reads
   "global hotkey registration not yet wired" (assert-less replace missed it in pass 2);
   hotkeys are wired and verified. Same sweep: re-verify every status line gained an
@@ -80,22 +87,31 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
 - [ ] **[hw] §23/§24 — Desktop feel checks:** overlay hotkey conflicts, click-through in
   games (low-level `forward:true` behavior), DWM per-monitor scaling at 125–250 %,
   `MediaRecorder` device defaults, global-shortcut while other apps hold focus.
-- [ ] **[hw] §9/§22 — Recording analysis with real ffmpeg + a vision model** (Ollama
-  `llava`/`qwen2.5-vl`), including the "import recording" path end-to-end.
-- [ ] **[hw] §14/§56 — Measurement pass:** collect latency/throughput numbers, verify
-  idle-unload actually frees VRAM with Ollama resident models (code + tests exist; the
-  numbers were the stated purpose of that phase).
+- [ ] **[hw] §9/§22 — Recording analysis with a real vision model.** The full pipeline is validated with
+  real binaries in tests (see §A seventh pass); what remains is QUALITY of summaries with a real vision model
+  (Ollama `llava`/`qwen2.5-vl`) over your actual desktop recordings — trigger it with the 🎬 button, then also
+  check frame scaling on your display configuration.
+- [ ] **[hw] §14/§56 — Measurement pass on the target machine:** now one command — `npm run bench`
+  (app closed, live config). It times provider health, raw generation latency + tok/s from real usage
+  counters, an E2E chat turn incl. time-to-first-token, embeddings, memory/knowledge retrieval over the live
+  DB, SQLite WAL insert throughput, a CPU/RAM snapshot, and the §56 idle-unload round trip with Ollama
+  `/api/ps` resident-MiB before/after (the VRAM proof). Report: `%APPDATA%\lpai\bench\report-*.md`.
+  `npm run bench -- --demo` sanity-checks the harness itself. Review the numbers, then decide what to optimize.
 - [ ] **[hw] §40/§41 — Resource pressure behaviour** with real generations (pause/resume
   of indexing under load is unit-tested only).
 
 ## C. Explicitly deferred / conditional (documented, not faked)
 
-- [ ] **[polish] §10 — GUI/computer actions** beyond file/command tools (deliberately
-  unbuilt per ARCHITECTURE note; would need its own safety model).
-- [ ] **[polish] §24 — wake word, VAD, streaming TTS playback** (spec conditions these on
-  practicality/supported backends).
-- [ ] **[polish] §12 — OCR for image-only PDFs** (needs an external engine; failure today
-  is honest).
+- [ ] **[phase2] §10 — GUI computer-control actions** ("open VS Code", "click this button",
+  "go to this site", "fill that field"). USER DECISION 2026-09-12: **Phase 2 — do not start
+  before the rest of the app is proven stable.** It needs a stronger permission/safety model
+  than today's per-mutation permission+audit; scope it as its own design pass when the time comes.
+- [ ] **[polish] §24 — wake word, VAD, streaming TTS playback, more advanced voice interaction,
+  better voice selection, additional voice controls.** User assessment: "not a fundamental
+  blocker" — basic local voice is architecturally supported (whisper/Piper HTTP adapters + demo
+  backends). Spec conditions these on practicality/supported backends.
+- [ ] **[polish] §12 — OCR for image-only PDFs** (needs an external engine; failure today is
+  honest). User assessment: "wouldn't make OCR a priority right now."
 - [ ] **[polish] §18/§19 — fuller skill editor UI** (today: prompt-dialog level editing;
   review/toggle/delete exist).
 - [ ] **[polish] Settings cleanup:** `voice.sttModel`/`ttsModel` config fields coexist with
