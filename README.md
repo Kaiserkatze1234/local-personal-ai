@@ -40,7 +40,7 @@ How the code maps to it: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 ```bash
 npm install
 npm run dev          # vite + rebuilt main + electron
-npm test             # 76 integration tests against the real core (no Electron needed)
+npm test             # 84 integration tests against the real core (no Electron needed)
 npm run typecheck    # node + web projects
 npm run lint         # biome
 npm run build        # dist/main, dist/preload, dist/renderer
@@ -92,10 +92,17 @@ testing and is always labeled as not real AI.
 
 ## Running on Windows
 
-1. Install [Node.js 20+](https://nodejs.org) and (recommended) [Ollama](https://ollama.com) with a model, e.g. `ollama pull qwen2.5-coder:7b`.
-2. Dev mode: `npm install` → `npm run dev` (Electron + Vite with hot reload).
+1. Install [Node.js LTS](https://nodejs.org) — **22 or newer recommended**: `better-sqlite3` ships prebuilt
+   Node binaries for Node ≥ 22, so `npm install` needs no compiler. On Node 20.x the install compiles it from
+   source (then you need "Visual Studio Build Tools + Python"). And (recommended) [Ollama](https://ollama.com)
+   with a model, e.g. `ollama pull qwen2.5-coder:7b`.
+2. Dev mode: `npm install` → `npm run dev` (Electron + Vite with hot reload). The first `npm run dev` runs
+   `scripts/prepare-native.mjs`: it fetches the prebuilt SQLite binding for *your* Electron's ABI into
+   `native/electron/` (cached, gitignored) because `npm install` builds one for Node, which the Electron
+   runtime cannot load — without this step a fresh checkout crashes at startup with `NODE_MODULE_VERSION`.
+   `npm test` keeps using the Node build from `node_modules`, so both loops work side by side.
 3. Installer: `npm run dist` → `release/Local Personal AI-Setup-*.exe` (x64/ARM64) or the portable `.exe`.
-4. First start walks you through provider detection, model choice, permissions and performance profile. Data lives in `%APPDATA%/lpai` — delete that folder for a full reset; nothing else is written.
+4. First start walks you through provider detection, model choice, permissions and performance profile. Data lives in `%APPDATA%\lpai` — the exact same folder in dev and installed builds; window size/position is remembered there too. Delete that folder for a full reset; nothing else is written.
 
 ### Start it by opening one thing
 

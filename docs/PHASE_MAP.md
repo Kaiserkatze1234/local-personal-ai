@@ -81,6 +81,32 @@ Windows/desktop runtime or external service to exercise.
   shipped macro overwrites `.ext` default handlers, which would hijack the
   user's Notepad/browser defaults.
 
+## Sixth build pass — Windows dev loop + desktop polish
+
+- **Native ABI, solved honestly (the fresh-Windows-clone crash):** `npm install`
+  produces a Node-ABI `better-sqlite3`; Electron refuses to load it
+  (`NODE_MODULE_VERSION`). `scripts/prepare-native.mjs` (run automatically as
+  `predev`, manually via `npm run native:fetch`) downloads the prebuilt
+  Electron-ABI binding through better-sqlite3's own `prebuild-install`, caches it
+  in `native/electron/` (gitignored) and restores `node_modules` byte-for-byte —
+  so `npm test` (Node ABI) and `npm run dev` (Electron ABI) coexist.
+  `storage/db.ts: resolveSqliteBinding` probes candidates (env override,
+  app-local, resources) and loads the first that works; packaged builds need
+  nothing (electron-builder `npmRebuild`). A real ABI mismatch now raises an
+  actionable hint instead of a raw dlopen error. Verified here end-to-end:
+  fetch cached `electron-v145` for Electron 41.7.1, node tests stayed green.
+- **Window placement persistence** (`main/electron/windowState.ts`): saved on
+  move/resize/maximize (debounced 600 ms) + flush on close, restored clamped —
+  a position on an unplugged monitor is dropped so the window never opens
+  off-screen (work-area aware, taskbar respected). Pure parse/snapshot core,
+  5 unit tests.
+- **Windows correctness polish:** AppUserModelID now set before any
+  window/tray/notification exists (was set inside the window factory);
+  userData pinned to `%APPDATA%\lpai` pre-ready so dev/packaged/portable share
+  exactly the documented data dir; boot failures surface in a real error
+  dialog instead of a silent double-click; native file dialogs are localized
+  via the same i18n table as the chrome.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

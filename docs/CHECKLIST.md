@@ -53,8 +53,22 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   `webUtils.getPathForFile`; non-hijacking `build/installer.nsh` registration.
   Covered by `tests/open-file.test.ts` (76/76 overall). The NSIS registry behavior itself
   is in §B (needs Windows to verify).
+- [x] **[code] Fresh-Windows dev loop (sixth pass).** `npm install && npm run dev` used to crash at
+  startup with `NODE_MODULE_VERSION` (Node-ABI better-sqlite3 vs Electron ABI). Now: `predev` →
+  `scripts/prepare-native.mjs` fetches the matching prebuilt into `native/electron/` (cached;
+  `node_modules` untouched so `npm test` keeps working — verified end-to-end here: `electron-v145`
+  for Electron 41.7.1, tests green after fetch), `resolveSqliteBinding` probes candidates at boot,
+  and a real mismatch raises a fix-it hint. Plus: window placement persistence with
+  off-screen/monitor-unplug guard, AppUserModelID before first window, `%APPDATA%\lpai` pinned for
+  dev+packaged, boot failures shown in an error dialog, localized native dialogs. 84/84 overall.
 
 ## B. Needs a Windows box / real environment (no code gap)
+
+- [ ] **[hw] Windows dev-loop verification:** on a fresh clone run `npm install && npm run dev` —
+  `predev` must fetch `better-sqlite3-v*-electron-v145-win32-x64.tar.gz` (verify the sha matches the
+  app's load, no AV/proxy surprises), window reopens at its last position across restarts and after
+  moving between differently scaled monitors (off-screen guard), and boot problems show the error
+  dialog with the actual reason.
 
 - [ ] **[hw] §16 — Produce the installer:** `npm run dist` on Windows (icons are
   committed: `build/icon.ico` multi-size + `icon.png`; `build/installer.nsh` carries the
