@@ -5,10 +5,37 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 
 export type SqlDatabase = Database.Database;
+
+const nodeRequire = createRequire(import.meta.url);
+
+/**
+ * better-sqlite3 ships exactly ONE binary per ABI — and Node (vitest) plus
+ * Electron (the app) have different ones. A mismatch is the classic fresh
+ * Windows-checkout crash: `npm install` builds for Node, `electron .` then
+ * dies with NODE_MODULE_VERSION. So the app keeps node_modules on the Node
+ * ABI (tests never break) and Electron additionally probes `native/electron/`
+ * for a fetched prebuilt binding (see scripts/prepare-native.mjs). The first
+ * candidate that actually loads wins; `undefined` falls back to
+ * better-sqlite3's own resolution — correct for packaged builds, where
+ * electron-builder's npmRebuild already produced an Electron-ABI binary.
+ */
+export function resolveSqliteBinding(candidates: readonly (string | undefined)[]): unknown {
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      const mod = nodeRequire(c) as unknown;
+      if (mod && typeof mod === 'object') return mod;
+    } catch {
+      /* wrong ABI or missing file — that is the signal to try the next candidate */
+    }
+  }
+  return undefined;
+}
 
 const MIGRATIONS: string[] = [
   // v1 — foundation tables
@@ -142,9 +169,26 @@ const MIGRATIONS: string[] = [
 export class SqlStore {
   readonly db: SqlDatabase;
 
-  constructor(public readonly path: string) {
+  constructor(
+    public readonly path: string,
+    /** pre-resolved better-sqlite3 addon object (see resolveSqliteBinding); omit for default resolution */
+    binding?: unknown,
+  ) {
     mkdirSync(dirname(path), { recursive: true });
-    this.db = new Database(path);
+    try {
+      this.db = new Database(path, binding ? { nativeBinding: binding as never } : undefined);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/NODE_MODULE_VERSION/.test(msg)) {
+        throw new Error(
+          `${msg}\n\n` +
+            'The installed better-sqlite3 binary was built for a different runtime.\n' +
+            'Running in Electron?  -> npm run native:fetch   (fetches the matching prebuilt into native/electron, cached)\n' +
+            'Running plain tests?  -> npm rebuild better-sqlite3',
+        );
+      }
+      throw err;
+    }
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('busy_timeout = 5000');

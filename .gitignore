@@ -8,3 +8,4 @@ release/
 coverage/
 .vite/
 *.local
+native/

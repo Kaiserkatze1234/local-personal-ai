@@ -12,6 +12,8 @@
   },
   "scripts": {
     "dev": "concurrently -k -n MAIN,UI,APP -c cyan,green,magenta \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "predev": "node scripts/prepare-native.mjs --quiet",
+    "native:fetch": "node scripts/prepare-native.mjs",
     "dev:main": "node scripts/build.mjs --watch",
     "dev:renderer": "vite",
     "dev:electron": "wait-port 5173 && cross-env LPAI_DEV_SERVER_URL=http://localhost:5173 electron .",

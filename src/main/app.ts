@@ -94,6 +94,8 @@ export interface BootOptions {
   /** Test seams: override/extend provider adapters and disable timers. */
   adapters?: 'default' | 'mock-only' | (() => void);
   timers?: boolean;
+  /** Pre-resolved better-sqlite3 addon (Electron ABI); undefined = default resolution. */
+  sqliteBinding?: unknown;
 }
 
 export class CoreApp {
@@ -149,7 +151,7 @@ export class CoreApp {
     this.config = new ConfigService(opts.dataDir);
     this.log.setLevel(this.config.get().diagnostics.logLevel as LogLevel);
 
-    this.store = new SqlStore(join(opts.dataDir, 'lpai.db'));
+    this.store = new SqlStore(join(opts.dataDir, 'lpai.db'), opts.sqliteBinding);
     const taskRepo = new TaskRepo(this.store);
     this.convos = new ConversationRepo(this.store);
     this.messages = new MessageRepo(this.store);

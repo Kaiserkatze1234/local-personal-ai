@@ -4,7 +4,7 @@
  * are testable without Electron (vitest boots CoreApp directly).
  */
 
-import { statSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   app,
@@ -28,7 +28,18 @@ import { CoreApp, type HostBindings } from './app.js';
 import { OverlayController } from './electron/overlayController.js';
 import { RegionPicker } from './electron/regionPicker.js';
 import { createElectronScreenSource } from './electron/screenElectron.js';
+import { parsePlacement, snapshotPlacement } from './electron/windowState.js';
 import { extractLaunchFiles } from './launchFiles.js';
+import { resolveSqliteBinding } from './storage/db.js';
+
+// Pin the data location BEFORE 'ready' locks it (the instance-socket path
+// also lives in userData): %APPDATA%\lpai on Windows, ~/.config/lpai on
+// Linux — identical in dev and packaged, exactly what the README promises.
+try {
+  app.setPath('userData', join(app.getPath('appData'), 'lpai'));
+} catch {
+  /* setPath after ready is rejected; non-Electron hosts never reach boot() anyway */
+}
 
 const gotLock = app.requestSingleInstanceLock({ id: 'main' });
 let core: CoreApp | null = null;
@@ -85,7 +96,10 @@ function broadcast(event: AppEvent): void {
 }
 
 async function boot(): Promise<void> {
-  const dataDir = process.env[DATA_DIR_ENV] ?? join(app.getPath('userData'), 'lpai');
+  // Windows: taskbar grouping, tray and toast notifications silently misbehave
+  // without the AppUserModelID — set it before any window or tray exists.
+  app.setAppUserModelId(APP_ID);
+  const dataDir = process.env[DATA_DIR_ENV] ?? app.getPath('userData');
   const rendererDir = join(app.getAppPath(), 'dist', 'renderer');
   const devUrl = process.env[DEV_SERVER_ENV] ?? null;
   const regionPicker = new RegionPicker(rendererDir, devUrl);
@@ -103,11 +117,21 @@ async function boot(): Promise<void> {
     },
     screenSource: createElectronScreenSource(),
     pickDirectory: async () => {
-      const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: 'Choose folder' });
+      const lang = () => core?.getConfig().general.language ?? 'en';
+      const r = await dialog.showOpenDialog({
+        properties: ['openDirectory', 'createDirectory'],
+        title: tr(lang(), 'Choose folder'),
+        buttonLabel: tr(lang(), 'Use this folder'),
+      });
       return r.canceled ? null : (r.filePaths[0] ?? null);
     },
     pickFile: async () => {
-      const r = await dialog.showOpenDialog({ properties: ['openFile'], title: 'Choose file' });
+      const lang = () => core?.getConfig().general.language ?? 'en';
+      const r = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title: tr(lang(), 'Choose file'),
+        buttonLabel: tr(lang(), 'Import'),
+      });
       return r.canceled ? null : (r.filePaths[0] ?? null);
     },
     overlayShow: () => overlay?.show(),
@@ -126,7 +150,16 @@ async function boot(): Promise<void> {
     onRegionResult: (rect) => regionPicker.deliver(rect),
   };
 
-  core = new CoreApp({ dataDir, host });
+  // Keep node_modules/better-sqlite3 on the Node ABI (so vitest always
+  // works) and let Electron probe the fetched prebuilt binding next to the
+  // app — see scripts/prepare-native.mjs + storage/db.ts resolveSqliteBinding.
+  const sqliteBinding = resolveSqliteBinding([
+    process.env.LPAI_SQLITE_BINDING,
+    join(app.getAppPath(), 'native', 'electron', 'better_sqlite3.node'),
+    ...(process.resourcesPath ? [join(process.resourcesPath, 'native', 'electron', 'better_sqlite3.node')] : []),
+  ]);
+
+  core = new CoreApp({ dataDir, host, sqliteBinding });
   await core.boot();
 
   // ---- global hotkeys (§23 overlay toggle, §24 voice activation) ----
@@ -174,10 +207,30 @@ async function boot(): Promise<void> {
   const api = new Api(core);
   ipcMain.handle('lpai:invoke', async (_ev, method: string, args: unknown[] = []) => api.handleRaw(method, args));
 
+  const winStateFile = join(dataDir, 'window-state.json');
+  const readJsonSafe = (f: string): unknown => {
+    try {
+      return JSON.parse(readFileSync(f, 'utf8')) as unknown;
+    } catch {
+      return null;
+    }
+  };
+
   createWindowRef = () => {
+    // reopen where the user left it; saved positions on now-absent monitors
+    // are dropped (the classic "window off-screen" Windows bug)
+    const saved = parsePlacement(
+      readJsonSafe(winStateFile),
+      screen.getAllDisplays().map((d) => d.workArea),
+      {
+        width: 1380,
+        height: 900,
+      },
+    );
     mainWindow = new BrowserWindow({
-      width: 1380,
-      height: 900,
+      ...(saved.x !== undefined && saved.y !== undefined ? { x: saved.x, y: saved.y } : {}),
+      width: saved.width,
+      height: saved.height,
       minWidth: 980,
       minHeight: 620,
       backgroundColor: '#0d1017',
@@ -192,8 +245,31 @@ async function boot(): Promise<void> {
         sandbox: false,
       },
     });
-    // Windows: notifications silently fail without an AppUserModelID
-    app.setAppUserModelId(APP_ID);
+    if (saved.maximized) mainWindow.maximize();
+
+    let boundsTimer: NodeJS.Timeout | null = null;
+    const flushPlacement = (): void => {
+      if (boundsTimer) {
+        clearTimeout(boundsTimer);
+        boundsTimer = null;
+      }
+      const w = mainWindow;
+      if (!w || w.isDestroyed() || w.isMinimized()) return;
+      try {
+        writeFileSync(winStateFile, JSON.stringify(snapshotPlacement({ ...w.getBounds(), maximized: w.isMaximized() })));
+      } catch {
+        /* geometry persistence is best-effort — never fail a close over it */
+      }
+    };
+    const persistPlacement = (): void => {
+      if (boundsTimer) clearTimeout(boundsTimer);
+      boundsTimer = setTimeout(flushPlacement, 600);
+    };
+    mainWindow.on('resize', persistPlacement);
+    mainWindow.on('move', persistPlacement);
+    mainWindow.on('maximize', persistPlacement);
+    mainWindow.on('unmaximize', persistPlacement);
+
     mainWindow.once('ready-to-show', () => {
       // §47 startup behaviour: startHidden keeps the window in the tray
       if (!core?.getConfig().general.startHidden) showMain();
@@ -201,6 +277,7 @@ async function boot(): Promise<void> {
     if (devUrl) void mainWindow.loadURL(devUrl);
     else void mainWindow.loadFile(join(rendererDir, 'index.html'));
     mainWindow.on('close', (e) => {
+      flushPlacement();
       const cfg = core?.getConfig();
       if (!appQuitting && cfg?.general.closeToTray && tray && !tray.isDestroyed()) {
         e.preventDefault(); // hide instead of quit — restorable from tray
@@ -274,8 +351,6 @@ async function boot(): Promise<void> {
       void c.dispose().finally(() => app.exit(0));
     }
   });
-
-  void screen; // electron require parity guard for older builds
 }
 
 if (!gotLock) {
@@ -287,7 +362,15 @@ if (!gotLock) {
     .whenReady()
     .then(boot)
     .catch((err) => {
-      console.error('[fatal] boot failed:', err);
+      const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      console.error('[fatal] boot failed:', msg);
+      // a double-clicked desktop icon that silently does nothing is the worst
+      // Windows failure mode — surface at least the reason
+      try {
+        dialog.showErrorBox(`${APP_NAME} — Fehler / error`, msg.slice(0, 4000));
+      } catch {
+        /* headless or too early for dialogs */
+      }
       app.exit(1);
     });
 
