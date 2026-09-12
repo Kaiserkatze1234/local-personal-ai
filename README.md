@@ -98,7 +98,7 @@ testing and is always labeled as not real AI.
    source (then you need "Visual Studio Build Tools + Python"). And (recommended) [Ollama](https://ollama.com)
    with a model, e.g. `ollama pull qwen2.5-coder:7b`.
 2. Dev mode: `npm install` → `npm run dev` (Electron + Vite with hot reload). The first `npm run dev` runs
-   `scripts/prepare-native.mjs`: it fetches the prebuilt SQLite binding for *your* Electron's ABI into
+   `scripts/rebuild-native.mjs` (`npm run rebuild:native`): it fetches the prebuilt SQLite binding for *your* Electron's ABI into
    `native/electron/` (cached, gitignored) because `npm install` builds one for Node, which the Electron
    runtime cannot load — without this step a fresh checkout crashes at startup with `NODE_MODULE_VERSION`.
    `npm test` keeps using the Node build from `node_modules`, so both loops work side by side.

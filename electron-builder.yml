@@ -19,7 +19,12 @@ files:
 # src/main/launchFiles.ts turns them into knowledge imports.
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
-npmRebuild: true
+# Native ABI policy (reproducible, see scripts/rebuild-native.mjs): the builder must NOT
+# rebuild into node_modules (that would clobber the Node-ABI binding `npm test` needs).
+# The identical cached Electron-ABI binding that `npm run dev` loads is injected by the
+# afterPack hook — same bytes, same verification, dev and dist can never diverge.
+npmRebuild: false
+afterPack: scripts/afterPack.cjs
 win:
   target:
     - target: nsis

@@ -19,7 +19,7 @@ const nodeRequire = createRequire(import.meta.url);
  * Windows-checkout crash: `npm install` builds for Node, `electron .` then
  * dies with NODE_MODULE_VERSION. So the app keeps node_modules on the Node
  * ABI (tests never break) and Electron additionally probes `native/electron/`
- * for a fetched prebuilt binding (see scripts/prepare-native.mjs). The first
+ * for a fetched prebuilt binding (managed by scripts/rebuild-native.mjs). The first
  * candidate that actually loads wins; `undefined` falls back to
  * better-sqlite3's own resolution — correct for packaged builds, where
  * electron-builder's npmRebuild already produced an Electron-ABI binary.
@@ -183,7 +183,7 @@ export class SqlStore {
         throw new Error(
           `${msg}\n\n` +
             'The installed better-sqlite3 binary was built for a different runtime.\n' +
-            'Running in Electron?  -> npm run native:fetch   (fetches the matching prebuilt into native/electron, cached)\n' +
+            'Running in Electron?  -> npm run rebuild:native   (fetches + verifies the matching prebuilt into native/electron, cached)\n' +
             'Running plain tests?  -> npm rebuild better-sqlite3',
         );
       }

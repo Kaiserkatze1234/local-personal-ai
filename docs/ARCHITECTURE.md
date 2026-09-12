@@ -88,7 +88,7 @@ the same code path Electron uses (see `tests/helpers.ts`).
 | Voice (role-bound STT/TTS, honest when unbound) | `main/voice/voiceService.ts` | §24 |
 | Electron host: window, capture, overlay, dialogs | `main/index.ts`, `main/electron/` | §42/§46 |
 | Window placement persistence (off-screen/monitor-unplug guard) | `main/electron/windowState.ts` | §43/§47 |
-| Runtime-correct SQLite binding (Node ABI tests vs Electron ABI dev, prebuild cache) | `storage/db.ts` + `scripts/prepare-native.mjs` + `native/` | §16/§33 |
+| Runtime-correct SQLite binding (Node ABI tests vs Electron ABI dev+dist, verified prebuild cache) | `storage/db.ts` + `scripts/rebuild-native.mjs` + `native/` + `scripts/afterPack.cjs` | §16/§33 |
 | Preload allowlist bridge | `src/preload/index.ts` | §35 |
 | Renderer (React + zustand; thin projections) | `src/renderer/` | §43/§44 |
 

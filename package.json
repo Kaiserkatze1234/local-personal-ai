@@ -8,12 +8,14 @@
   "main": "dist/main/index.js",
   "author": "user",
   "engines": {
-    "node": ">=20.17"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "concurrently -k -n MAIN,UI,APP -c cyan,green,magenta \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
-    "predev": "node scripts/prepare-native.mjs --quiet",
-    "native:fetch": "node scripts/prepare-native.mjs",
+    "predev": "node scripts/rebuild-native.mjs --quiet",
+    "pretest": "node scripts/rebuild-native.mjs --quiet --node-only",
+    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "predist": "node scripts/rebuild-native.mjs --dist",
     "dev:main": "node scripts/build.mjs --watch",
     "dev:renderer": "vite",
     "dev:electron": "wait-port 5173 && cross-env LPAI_DEV_SERVER_URL=http://localhost:5173 electron .",
@@ -26,7 +28,6 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "dist": "npm run build && electron-builder --win",
-    "postdist": "npm rebuild better-sqlite3",
     "preview": "vite preview"
   },
   "dependencies": {

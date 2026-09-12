@@ -151,11 +151,14 @@ async function boot(): Promise<void> {
   };
 
   // Keep node_modules/better-sqlite3 on the Node ABI (so vitest always
-  // works) and let Electron probe the fetched prebuilt binding next to the
-  // app — see scripts/prepare-native.mjs + storage/db.ts resolveSqliteBinding.
+  // works) and let Electron load the verified prebuilt from the native/ cache —
+  // one per-<platform>-<arch> directory, shared by dev and (via the afterPack
+  // hook) the packaged app; see scripts/rebuild-native.mjs + storage/db.ts.
+  const triple = `${process.platform}-${process.arch}`;
   const sqliteBinding = resolveSqliteBinding([
     process.env.LPAI_SQLITE_BINDING,
-    join(app.getAppPath(), 'native', 'electron', 'better_sqlite3.node'),
+    join(app.getAppPath(), 'native', 'electron', triple, 'better_sqlite3.node'),
+    join(app.getAppPath(), 'native', 'electron', 'better_sqlite3.node'), // pre-triple cache layout, still honored
     ...(process.resourcesPath ? [join(process.resourcesPath, 'native', 'electron', 'better_sqlite3.node')] : []),
   ]);
 
