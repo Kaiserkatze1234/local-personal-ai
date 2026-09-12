@@ -31,6 +31,10 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   adapter ships. Add `providers/adapters/voiceServers.ts`: whisper.cpp HTTP server
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
+- [x] **[code] Eleventh pass (part 3) — abort now lives for the WHOLE request** (both adapters:
+  `AbortSignal.any` for the fetch lifetime + per-read abort check + `reader.cancel()` on early
+  exit), and the live suite asserts adapter contracts instead of model obedience. PHASE_MAP holds
+  the details.
 - [x] **[code] Eleventh pass (part 2) — Ollama runtime context fix (real Windows failure):** every
   `/api/chat` now sends an explicit bounded `options.num_ctx` (request override > config
   `ai.runtimeContextTokens`, default 4096, clamped to a hardware ceiling) — model-advertised

@@ -81,7 +81,7 @@ function electronVersion() {
 }
 
 /** ---- 1. Node ABI: verified by actually opening an in-memory database. ---- */
-function ensureNodeAbi(bsq) {
+function ensureNodeAbi() {
   const probe = spawnSync(
     process.execPath,
     ['-e', "const D=require('better-sqlite3'); const db=new D(':memory:'); db.exec('select 1'); process.exit(typeof D==='function'?0:2)"],
@@ -146,7 +146,7 @@ function fetchPrebuilt(bsq, platform, arch, ev, dest) {
   }
 }
 
-function rebuildViaElectronRebuild(bsq, ev, dest) {
+function rebuildViaElectronRebuild(bsq, dest) {
   // current platform only, requires local toolchain — fallback when no prebuilt exists
   const bin = join(ROOT, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
   if (!existsSync(bin)) return false;
@@ -222,7 +222,7 @@ function ensureElectronAbi(bsq, ev, triples) {
     if (fetchPrebuilt(bsq, platform, arch, ev, dir)) ok = true;
     if (!ok && t === `${process.platform}-${process.arch}`) {
       say(`no prebuilt available for ${t} — falling back to @electron/rebuild (needs local toolchain)…`);
-      if (rebuildViaElectronRebuild(bsq, ev, dir)) ok = true;
+      if (rebuildViaElectronRebuild(bsq, dir)) ok = true;
     }
     if (!ok) {
       results.push(
@@ -260,7 +260,7 @@ function main() {
     say('better-sqlite3 not installed — run npm install first; skipping.');
     return;
   }
-  const nodeOk = ensureNodeAbi(bsq);
+  const nodeOk = ensureNodeAbi();
   if (NODE_ONLY) {
     if (!nodeOk) fail('node ABI could not be restored');
     return;

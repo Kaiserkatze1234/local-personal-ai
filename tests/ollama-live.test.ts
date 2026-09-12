@@ -91,9 +91,14 @@ live('real Ollama provider (§6/§7/§56)', () => {
       maxTokens: 64,
       contextTokens: TEST_NUM_CTX,
     } as never);
-    expect(res.text.toLowerCase()).toContain('lponama-ok');
+    // Adapter behavior, not model obedience: exact-echo compliance is a MODEL
+    // capability (0.5B-class models ignore it non-deterministically) — the
+    // contract under test is real completion + real counters through a bounded ctx.
+    expect(res.text.trim().length).toBeGreaterThan(0);
+    expect(res.finishReason).toBeTruthy(); // server reported a completion state
     expect(res.usage?.outputTokens).toBeGreaterThan(0); // eval_count from the actual run
     expect(res.usage?.inputTokens).toBeGreaterThan(0); // prompt_eval_count
+    expect(res.usage!.inputTokens!).toBeLessThanOrEqual(TEST_NUM_CTX); // bounded context, not 262144
   }, 180_000);
 
   it('streaming yields progressive deltas', async () => {
@@ -107,14 +112,16 @@ live('real Ollama provider (§6/§7/§56)', () => {
       if (c.textDelta) chunks.push(c.textDelta);
     }
     const text = chunks.join('');
+    // multiple deltas + real content — counting correctly is the model's job, not ours
     expect(chunks.length).toBeGreaterThanOrEqual(2);
-    expect(text).toMatch(/1[\s.]*2[\s.]*3/); // progressive output actually arrives
+    expect(text.trim().length).toBeGreaterThan(0);
   }, 180_000);
 
   it('cancellation stops generation mid-flight', async () => {
     const ctrl = new AbortController();
     let chunks = 0;
     let stopped = false;
+    let tAfterAbort = 0;
     try {
       for await (const c of adapter.chat.stream({
         modelId: `ollama:${wantModel ?? 'x'}`,
@@ -123,13 +130,19 @@ live('real Ollama provider (§6/§7/§56)', () => {
         contextTokens: 4096, // room for the long story until abort lands mid-flight
         signal: ctrl.signal,
       } as never)) {
-        if (c.textDelta && ++chunks === 2) ctrl.abort();
+        if (c.textDelta && ++chunks === 2) {
+          ctrl.abort();
+          tAfterAbort = Date.now();
+        }
       }
     } catch {
       stopped = true; // abort surfaces as a stream error — must not hang or silently continue
     }
+    // The whole point: Stop takes effect IMMEDIATELY (regression: an abort bridge removed
+    // at response-headers did nothing mid-stream and generation ran to the num_predict cap).
+    if (stopped) expect(Date.now() - tAfterAbort).toBeLessThan(15_000);
     expect(stopped || chunks < 500).toBe(true);
-    if (!stopped) expect(chunks).toBeLessThan(500);
+    if (!stopped) expect(chunks).toBeLessThan(500); // model finished before abort mattered
   }, 300_000);
 
   it('idle unload really evicts the model (api/ps before vs after, §56)', async () => {

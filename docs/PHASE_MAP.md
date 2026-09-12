@@ -243,6 +243,30 @@ while the model advertises 32768 (informational) — plus a new offline regressi
 262144 request, both /api/show shapes parse, clamps hold, and the config default is a LIVE getter
 (Settings change applies next request, no re-registration).
 
+## Eleventh pass (part 3) — request-lifetime abort hole found by re-verification
+
+Re-running the whole suite fresh (same day) exposed a nondeterministic cancellation failure that
+the earlier green run had raced past: `OllamaAdapter.request()` (and its openaiCompat twin) bridged
+the caller's AbortSignal with a listener that was REMOVED when the fetch promise resolved — for a
+stream that means when HEADERS arrive. Any abort issued while the body was streaming did nothing;
+generation ran to completion (before num_predict existed: forever — the observed 11-minute story).
+Fix in both adapters: `AbortSignal.any([timeout, caller])` composed for the entire fetch lifetime
+(undici keeps honoring it through body consumption), plus two transport-independent guards in the
+stream generators: an `aborted` check per read and `reader.cancel()` in `finally` so even a plain
+`break` in the consumer releases the HTTP body instead of orphaning the server-side generation.
+Side effect of the composition: the 600 s stream cap now bounds TOTAL duration (a stalled server
+can no longer hang a chat turn forever) and generate's JSON wait is cancelable too.
+
+Also removed the accidental non-determinism the live suite had smuggled in: asserting `LPONAMA-OK`
+echo and a `1-2-3` count tests MODEL capability, not the adapter (qwen2.5:0.5b on 10 t/s CPU fails
+those probabilistically). Live assertions are now contract-level (non-empty real text, finishReason,
+usage counters, input ≤ the bounded context, fast stream exit after abort) — deterministic across
+three consecutive 8/8 runs.
+
+Three new unit regressions (offline, fake streaming transport): abort AFTER response start still
+kills the stream (n=2 exactly), stop lands even when the transport ignores the signal (≤3 chunks),
+early `break` calls body cancel. All warnings in touched files cleaned (biome: 0 errors 0 warnings).
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

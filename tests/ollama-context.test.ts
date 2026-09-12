@@ -41,8 +41,11 @@ function harness(): Harness {
           status: 200,
           body: {
             getReader: () => ({
-              read: async () =>
-                first ? ((first = false), { done: false, value: new TextEncoder().encode(chunk) }) : { done: true, value: undefined },
+              read: async () => {
+                if (!first) return { done: true, value: undefined };
+                first = false;
+                return { done: false, value: new TextEncoder().encode(chunk) };
+              },
             }),
           },
         } as unknown as Response;
@@ -60,6 +63,97 @@ const req = (extra: Partial<GenerationRequest> = {}): GenerationRequest => ({
   modelId: 'ollama:dummy:latest',
   messages: [{ role: 'user', content: 'hi' }],
   ...extra,
+});
+
+describe('stream abort & body release (request-lifetime regression: listener removed at headers disabled Stop mid-stream)', () => {
+  interface FakeStream {
+    fetchImpl: typeof fetch;
+    events: string[];
+  }
+  function slowChunks(fetchImplOpts: { honorAbort: boolean; trickle: boolean }): FakeStream {
+    const events: string[] = [];
+    const fetchImpl = (async (_u: unknown, init: { signal?: AbortSignal | null }) => {
+      events.push('open');
+      let pending: { res: (v: unknown) => void; rej: (e: unknown) => void } | null = null;
+      let delivered = 0;
+      if (fetchImplOpts.honorAbort) {
+        init.signal?.addEventListener('abort', () => {
+          events.push('transport-abort');
+          pending?.rej(new DOMException('Aborted', 'AbortError'));
+        });
+      }
+      const enc = new TextEncoder();
+      const nextLine = () => enc.encode(`${JSON.stringify({ message: { content: `tok${delivered}` } })}\n`);
+      const read = (): Promise<unknown> => {
+        if (delivered < 2) {
+          delivered++;
+          const v = nextLine();
+          if (fetchImplOpts.trickle) return new Promise((r) => setTimeout(() => r({ done: false, value: v }), 5));
+          return Promise.resolve({ done: false, value: v });
+        }
+        return new Promise((res, rej) => {
+          pending = { res, rej };
+          if (fetchImplOpts.trickle)
+            setTimeout(() => {
+              pending = null;
+              delivered++;
+              res({ done: false, value: nextLine() });
+            }, 30);
+        });
+      };
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          getReader: () => ({
+            read,
+            cancel: () => {
+              events.push('body-cancel');
+              pending?.res({ done: true, value: undefined });
+              return Promise.resolve();
+            },
+          }),
+        },
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    return { fetchImpl, events };
+  }
+
+  it('caller abort AFTER the response started still terminates the stream (honoring transport)', async () => {
+    const f = slowChunks({ honorAbort: true, trickle: false });
+    const a = new OllamaAdapter({ baseUrl: 'http://test', fetchImpl: f.fetchImpl });
+    const ctrl = new AbortController();
+    let n = 0;
+    await expect(
+      (async () => {
+        for await (const _c of a.chat.stream(req({ signal: ctrl.signal }))) if (++n === 2) ctrl.abort();
+      })(),
+    ).rejects.toThrow(/Abort/i);
+    expect(f.events).toContain('transport-abort'); // signal was LIVE during body consumption
+    expect(n).toBe(2); // generation stopped right there — not at some later cap
+  });
+
+  it('stop lands even when the transport ignores the signal (per-read aborted check)', async () => {
+    const f = slowChunks({ honorAbort: false, trickle: true });
+    const a = new OllamaAdapter({ baseUrl: 'http://test', fetchImpl: f.fetchImpl });
+    const ctrl = new AbortController();
+    let n = 0;
+    let threw = false;
+    try {
+      for await (const _c of a.chat.stream(req({ signal: ctrl.signal }))) if (++n === 2) ctrl.abort();
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+    expect(n).toBeLessThanOrEqual(3); // at most one extra chunk — never a full generation
+  });
+
+  it('early break in the consumer releases the HTTP body (no orphaned generation)', async () => {
+    const f = slowChunks({ honorAbort: true, trickle: false });
+    const a = new OllamaAdapter({ baseUrl: 'http://test', fetchImpl: f.fetchImpl });
+    for await (const _c of a.chat.stream(req())) break; // UI Stop without signal
+    expect(f.events).toContain('body-cancel');
+  });
 });
 
 describe('num_ctx policy (never the advertised model maximum)', () => {

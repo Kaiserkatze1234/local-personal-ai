@@ -48,24 +48,17 @@ export class OpenAiCompatAdapter implements ModelProviderAdapter {
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
-    // Chained abort (same fix as the Ollama adapter): the internal timeout AND
-    // a caller-provided signal both cancel the request, instead of one
-    // silently replacing the other.
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const caller = init.signal as AbortSignal | undefined | null;
-    const onCallerAbort = (): void => ctrl.abort();
-    caller?.addEventListener('abort', onCallerAbort);
-    try {
-      return await this.fetch(`${this.baseUrl}${pathname}`, {
-        ...init,
-        headers: { ...this.headers(), ...(init.headers as object) },
-        signal: ctrl.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-      caller?.removeEventListener('abort', onCallerAbort);
-    }
+    // Chained abort for the WHOLE request lifetime (same fix as the Ollama adapter):
+    // timeout + caller signal compose via AbortSignal.any, so pressing "stop"
+    // still cancels after headers arrive — a bridge removed at Response time
+    // would silently disable mid-stream Stop.
+    const caller = init.signal as AbortSignal | null | undefined;
+    const signal = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(caller ? [caller] : [])]);
+    return this.fetch(`${this.baseUrl}${pathname}`, {
+      ...init,
+      headers: { ...this.headers(), ...(init.headers as object) },
+      signal,
+    });
   }
 
   async healthCheck(): Promise<ProviderHealth> {
@@ -182,6 +175,8 @@ export class OpenAiCompatAdapter implements ModelProviderAdapter {
             })),
             stream: true,
             temperature: req.temperature,
+            // bounded length travels on the stream path too (was generate-only)
+            ...(req.maxTokens && req.maxTokens > 0 ? { max_tokens: Math.floor(req.maxTokens) } : {}),
           }),
           signal: req.signal,
         },
@@ -191,25 +186,30 @@ export class OpenAiCompatAdapter implements ModelProviderAdapter {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try {
-            const j = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
-            const delta = j.choices?.[0]?.delta?.content;
-            if (delta) yield { textDelta: delta };
-          } catch {
-            /* partial */
+      try {
+        while (true) {
+          if (req.signal?.aborted) throw new DOMException('Aborted', 'AbortError'); // deterministic stop
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 1);
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            try {
+              const j = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+              const delta = j.choices?.[0]?.delta?.content;
+              if (delta) yield { textDelta: delta };
+            } catch {
+              /* partial */
+            }
           }
         }
+      } finally {
+        Promise.resolve(reader.cancel?.()).catch(() => {}); // release the HTTP body on early exit
       }
     }.bind(this),
   };

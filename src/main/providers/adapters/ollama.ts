@@ -113,26 +113,21 @@ export class OllamaAdapter implements ModelProviderAdapter {
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
-    // Chained abort: BOTH the internal timeout and a caller-provided signal
-    // (user pressing "stop") must cancel the HTTP request — an abandoned
-    // stream would otherwise leave the model generating and the GPU busy.
-    // (Found by the real-Ollama live test: spreading `init` then setting
-    // `signal` silently overrode the caller's signal.)
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const caller = init.signal as AbortSignal | undefined | null;
-    const onCallerAbort = (): void => ctrl.abort();
-    caller?.addEventListener('abort', onCallerAbort);
-    try {
-      return await this.fetch(`${this.baseUrl}${pathname}`, {
-        ...init,
-        headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
-        signal: ctrl.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-      caller?.removeEventListener('abort', onCallerAbort);
-    }
+    // Chained abort: BOTH the internal timeout and a caller-provided signal (user pressing
+    // "stop") must cancel the HTTP request FOR ITS WHOLE LIFETIME — through the response
+    // body of a stream, not just until headers arrive. A bridging listener that is removed
+    // when the Response resolves silently disables Stop mid-stream (real live-suite failure:
+    // generation ran on to the num_predict cap). AbortSignal.any keeps the composition
+    // attached for as long as the fetch machinery consumes the body; the timeout therefore
+    // also caps total stream duration — a stalled server can no longer hang the generator
+    // forever. Node >=22 / Electron >=41 guarantee AbortSignal.any exists.
+    const caller = init.signal as AbortSignal | null | undefined;
+    const signal = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(caller ? [caller] : [])]);
+    return this.fetch(`${this.baseUrl}${pathname}`, {
+      ...init,
+      headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+      signal,
+    });
   }
 
   async healthCheck(): Promise<ProviderHealth> {
@@ -300,25 +295,33 @@ export class OllamaAdapter implements ModelProviderAdapter {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line) continue;
-          try {
-            const j = JSON.parse(line) as { message?: { content?: string }; done?: boolean; error?: string };
-            if (j.error) throw new Error(`Ollama: ${j.error}`);
-            const delta = j.message?.content ?? '';
-            if (delta) yield { textDelta: delta };
-          } catch (err) {
-            if (err instanceof SyntaxError) continue; // partial line
-            throw err;
+      try {
+        while (true) {
+          // belt & braces: deterministic exit even if the transport ignores the signal
+          if (req.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line) continue;
+            try {
+              const j = JSON.parse(line) as { message?: { content?: string }; done?: boolean; error?: string };
+              if (j.error) throw new Error(`Ollama: ${j.error}`);
+              const delta = j.message?.content ?? '';
+              if (delta) yield { textDelta: delta };
+            } catch (err) {
+              if (err instanceof SyntaxError) continue; // partial line
+              throw err;
+            }
           }
         }
+      } finally {
+        // early consumer exit (UI Stop / break) must release the HTTP body,
+        // otherwise the server keeps generating into an orphaned stream
+        Promise.resolve(reader.cancel?.()).catch(() => {});
       }
     }.bind(this),
   };
