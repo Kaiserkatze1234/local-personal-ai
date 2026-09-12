@@ -267,6 +267,41 @@ Three new unit regressions (offline, fake streaming transport): abort AFTER resp
 kills the stream (n=2 exactly), stop lands even when the transport ignores the signal (≤3 chunks),
 early `break` calls body cancel. All warnings in touched files cleaned (biome: 0 errors 0 warnings).
 
+## Eleventh pass (part 4) — real-Windows live-suite failures: model selection honesty
+
+Windows run (qwen3:4b + qwen3:8b + nomic-embed-text) failed 5 of the live tests + the FFmpeg
+assertion. Causes and fixes:
+
+1. **Embedding model picked for chat (production bug):** `inferCapabilities` unconditionally gave
+   every model `text_generation`+`streaming`, and Ollama lists models alphabetically — so
+   `nomic-embed-text` ('n' sorts before 'q') became the "chat-capable" first pick for anything
+   capability-filtered (live test, first-run wizard, router candidate pool). Fixed: bert-style /
+   embed-matching names are classified **embeddings-only** — never advertise chat. Unit-pinned for
+   nomic/bge/snowflake/all-minilm while qwen/llava keep their caps.
+2. **`ollama:x` fake fallback** in four tests: replaced by ONE `beforeAll` resolution —
+   LPAI_OLLAMA_MODEL pin (must be installed AND chat-capable or it FAILS loudly listing valid
+   candidates; no silent fallback) → else prefer `qwen3:4b` → else first chat-capable model.
+   Selection is printed (`[live] chat model selected: …`). Embeddings use a separate
+   capability-gated selection (never a chat model for /api/embed).
+3. **Cancellation timing:** timestamp now captured immediately BEFORE `ctrl.abort()` and the
+   <15 s requirement is asserted only when an abort actually fired (a short completion can no
+   longer read as epoch-milliseconds — the invalid huge value); when abort fires, the stream MUST
+   terminate with an error (`stopped` is now required, not optional). maxTokens 1024 keeps the
+   runaway case above the 500-chunk guard while bounding the negative.
+4. **New wire invariant:** every captured generation payload (unload eviction pings excluded —
+   they carry no messages by design) has explicit `num_ctx` > 0 and ≤ 32768, and the explicit
+   2048 appears on ≥4 requests — payload-level verification per the checklist.
+5. **FFmpeg test honesty (env-aware):** third-pass asserts the SAME detection the service uses
+   (`binaryAvailable` where/which): ffmpeg absent → UNAVAILABLE, present → OK (vision in the test
+   harness is OK by construction, proven by recording-ffmpeg:77); summarize(missing file) must
+   fail in both worlds. Verified in BOTH environments: sandbox default = absent branch, full suite
+   with ffmpeg-static+ffprobe-static on PATH = OK branch, and that run also activated
+   recording-ffmpeg (real binaries) for the first time in this environment.
+
+Verified: `npm test` 111+9 (default) · with ffmpeg+`LPAI_OLLAMA_URL` everything runs — **120/120,
+0 skips** · live suite 9/9 both unpinned (auto-select) and pinned, plus the loud-fail check that
+pinning an embed model is rejected with the valid candidate list.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

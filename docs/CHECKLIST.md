@@ -31,6 +31,12 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   adapter ships. Add `providers/adapters/voiceServers.ts`: whisper.cpp HTTP server
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
+- [x] **[code] Eleventh pass (part 4) — live-suite model selection honesty (real-Windows failures):**
+  embedding-only models never advertise chat (was a production capability bug: alphabetical listing
+  made nomic-embed-text the default "chat model" everywhere), live tests resolve one capability-gated
+  chat model (qwen3:4b preferred, pins fail loudly) and a separate embed model, cancellation timing
+  measures correctly (pre-abort timestamp, ≤15 s enforced), and the FFmpeg assertion mirrors the
+  service's own PATH detection (OK when present, UNAVAILABLE when not, honest failure both ways).
 - [x] **[code] Eleventh pass (part 3) — abort now lives for the WHOLE request** (both adapters:
   `AbortSignal.any` for the fetch lifetime + per-read abort check + `reader.cancel()` on early
   exit), and the live suite asserts adapter contracts instead of model obedience. PHASE_MAP holds

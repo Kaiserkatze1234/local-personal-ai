@@ -10,6 +10,7 @@ import { ingestFile } from '../src/main/files/importers.js';
 import { extractDocxText } from '../src/main/files/parseDocx.js';
 import { extractPdfText } from '../src/main/files/parsePdf.js';
 import { PiperHttpAdapter, WhisperHttpAdapter } from '../src/main/providers/adapters/voiceServers.js';
+import { binaryAvailable } from '../src/main/screen/recordingAnalysis.js';
 import { makeTestApp } from './helpers.js';
 
 describe('PDF text layer extraction (§12)', () => {
@@ -330,13 +331,15 @@ describe('desktop-only features stay honest headless (§21/§22)', () => {
     }
   });
 
-  it('recording status/analyze never pretend without ffmpeg', async () => {
+  it('recording status mirrors ACTUAL ffmpeg availability; analyze fails honestly either way', async () => {
     const t = await makeTestApp();
     try {
+      // same detection the service itself uses — no assumptions about the machine
+      const haveFfmpeg = (await binaryAvailable('ffmpeg')) && (await binaryAvailable('ffprobe'));
       const st = await t.app.recordings.status();
-      expect(st.state).toBe('UNAVAILABLE');
+      expect(st.state, `ffmpeg on PATH=${haveFfmpeg} (message: ${st.message})`).toBe(haveFfmpeg ? 'OK' : 'UNAVAILABLE');
       const r = await t.app.recordings.summarize(join(t.dir, 'nope.mp4'));
-      expect(r.ok).toBe(false);
+      expect(r.ok).toBe(false); // missing input must fail honestly in BOTH environments
       expect(r.error).toBeTruthy();
     } finally {
       await t.cleanup();

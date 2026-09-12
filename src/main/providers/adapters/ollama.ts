@@ -62,16 +62,23 @@ interface OllamaTagModel {
 /** Heuristic capability inference from model name/family (documented, replaceable). */
 export function inferCapabilities(name: string, family?: string): ModelCapability[] {
   const n = `${name} ${family ?? ''}`.toLowerCase();
-  const caps: ModelCapability[] = ['text_generation', 'streaming'];
-  if (/(vl|vision|llava|minicpm-v|gemma3|moondream|qwen2?\.5-vl|glm-4v)/.test(n)) caps.push('vision');
-  if (/(embed|bge|snowflake-arctic|mxbai-embed|nomic-embed|jina-embed)/.test(n)) caps.push('embeddings');
+  // Embedding-only models must NEVER advertise chat: Ollama lists models
+  // alphabetically, so the old blanket 'text_generation' made every
+  // capability-filtered picker (wizard scan, router, live tests) happily
+  // select e.g. nomic-embed-text for /api/chat — a real Windows failure where
+  // 'n' sorts before 'q'. bert-family counts as embedding-only too.
+  const isEmbedding = /(embed|bge[-_]|jina|e5[-_]|[-_]e5|gte[-_]|snowflake-arctic|multilingual-e5|bert)/.test(n);
+  const caps: ModelCapability[] = isEmbedding ? ['embeddings'] : ['text_generation', 'streaming'];
+  if (!isEmbedding && /(vl|vision|llava|minicpm-v|gemma3|moondream|qwen2?\.5-vl|glm-4v)/.test(n)) caps.push('vision');
   if (
-    !/(embed|llava|bge|moondream)/.test(n) &&
+    !isEmbedding &&
+    !/(llava|moondream)/.test(n) &&
     /(qwen2?(\.5)?|llama3(\.\d)?|mistral|mixtral|gemma3|deepseek|command-r|hermes|firefunction|nemotron|phi4|phi-4|granite)/.test(n)
   ) {
     caps.push('tool_calling');
   }
-  if (/(qwen2?(\.5)?|llama3\.1|llama3\.2|mistral|mixtral|gemma3|deepseek|command-r|phi4|hermes)/.test(n)) caps.push('structured_output');
+  if (!isEmbedding && /(qwen2?(\.5)?|llama3\.1|llama3\.2|mistral|mixtral|gemma3|deepseek|command-r|phi4|hermes)/.test(n))
+    caps.push('structured_output');
   return caps;
 }
 

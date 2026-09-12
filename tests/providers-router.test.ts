@@ -12,6 +12,14 @@ describe('ollama adapter (as adapter only, never core)', () => {
   it('infers capabilities by name heuristics', () => {
     expect(inferCapabilities('qwen2.5-coder:7b', 'qwen2')).toContain('tool_calling');
     expect(inferCapabilities('llava:13b', undefined)).toContain('vision');
+    // embedding-only models never advertise chat (Windows failure: nomic sorted before chat models)
+    for (const e of ['nomic-embed-text', 'bge-m3:latest', 'snowflake-arctic-embed:latest', 'all-minilm']) {
+      const c = inferCapabilities(e, 'bert');
+      expect(c, e).toContain('embeddings');
+      expect(c, e).not.toContain('text_generation');
+      expect(c, e).not.toContain('streaming');
+    }
+    expect(inferCapabilities('qwen2.5:0.5b', 'qwen2')).toContain('text_generation');
     expect(inferCapabilities('nomic-embed-text', undefined)).toContain('embeddings');
   });
 
