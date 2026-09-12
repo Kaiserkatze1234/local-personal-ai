@@ -150,6 +150,36 @@ input → neutral). Interruption completed: sending a message stops in-flight TT
 turned out to be stale — `voiceName` was already wired through the whole path.
 4 tests in `tests/voice-playback.test.ts`; suite at 90.
 
+## Ninth build pass — Level 4/5 validation with a real runtime
+
+Testing philosophy taken literally: mocked suites prove plumbing, so this pass ran the real thing.
+Installed a genuine Ollama v0.34.0 (CPU) with `qwen2.5:0.5b` + `nomic-embed-text`, then:
+
+- **Real-provider tests** (`tests/ollama-live.test.ts`, opt-in via `LPAI_OLLAMA_URL`): health with
+  real model count, discovery with `/api/show` context refinement, non-streaming + streaming
+  generation with server-reported usage counters, cancellation mid-stream, embedding similarity
+  sanity, and §56 unload verified via `/api/ps` before/after. 7/7 green against the real server,
+  twice back-to-back after ordering hardening (the embedding test moved last: its nomic model swap
+  was the only thing that could queue-block another check on a 2-core/2 GB machine).
+- **This caught a genuine bug**: `OllamaAdapter.request()` overrode the caller's `AbortSignal` with
+  its own timeout controller (`{...init, signal: ctrl.signal}`), so "stop generation" never reached
+  HTTP — the model kept generating a full response after the user cancelled (wasting GPU time and
+  blocking the next request on a single-slot server). Fixed with a chained abort in BOTH ollama and
+  openaiCompat (openaiCompat had the inverse flaw: caller signal dropped the timeout). The
+  cancellation test timed out for 180 s before the fix; it takes 2.3 s after.
+- **Real bench numbers** here: 16.1 tok/s generation (2-core CPU), TTFT 3554 ms end-to-end through
+  `chat.send`, 768-dim embeddings, and idle unload measured 462 MiB → 0 MiB resident. Same command
+  on the RTX 3070 box is the hardware verdict.
+- **Boot smoke mode** (`LPAI_SMOKE=1` in `src/main/index.ts`): window + renderer load + preload
+  bridge + `app.info` IPC round-trip, `smoke-result.txt` + exit code — the Electron-binary boot
+  itself cannot run in this sandbox (no X libraries, no root), so it is verifiable-on-Windows, not
+  claimed-verified-here.
+- **Packaging**: `electron-builder --win --dir` produced a valid win32 layout on Linux —
+  `Local Personal AI.exe`, `app.asar` (10.5 MB), and the packaged `better_sqlite3.node` carries the
+  MZ/PE header (real electron-win32 prebuilt swapped in). Side effect discovered: the rebuild edits
+  `node_modules` in place and breaks the Node-ABI test binding → added `postdist` restore.
+  NSIS/portable targets + install/uninstall on Windows stay §B.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

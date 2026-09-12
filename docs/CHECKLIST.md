@@ -31,6 +31,15 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   adapter ships. Add `providers/adapters/voiceServers.ts`: whisper.cpp HTTP server
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
+- [x] **[code] Ninth pass — Level 4 validation against a real Ollama** (`tests/ollama-live.test.ts`,
+  opt-in `LPAI_OLLAMA_URL`; 7/7 green against a real v0.34.0 server + `qwen2.5:0.5b` +
+  `nomic-embed-text`). It caught and fixed a real cancellation bug (caller `AbortSignal` overridden
+  by the adapter's own timeout controller in `ollama.ts`; both providers now chain both signals).
+  Plus: `LPAI_SMOKE=1` boot validation in `src/main/index.ts` (window→preload→IPC→exit code +
+  `smoke-result.txt`), `electron-builder --win --dir` verified on Linux (win32 exe + asar + PE-format
+  electron-ABI sqlite binding), and a `postdist` hook restoring the Node-ABI binding that the
+  in-place rebuild clobbers. Live `npm run bench` here: 16.1 tok/s on sandbox CPU, unload
+  462 MiB → 0 MiB proven via `/api/ps`.
 - [x] **[code] §24 — Voice feature items still missing** (spec's own list):
   - [x] `speed`/`volume` now take effect: the renderer sets `Audio.volume` (never consumed
         server-side) and `Audio.playbackRate` only when the bound backend did NOT synthesize with
@@ -79,7 +88,13 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   `predev` must fetch `better-sqlite3-v*-electron-v145-win32-x64.tar.gz` (verify the sha matches the
   app's load, no AV/proxy surprises), window reopens at its last position across restarts and after
   moving between differently scaled monitors (off-screen guard), and boot problems show the error
-  dialog with the actual reason.
+  dialog with the actual reason. Fastest objective check: `$env:LPAI_SMOKE='1'; npm run dev` →
+  expect `SMOKE_OK` + exit 0 (`%APPDATA%\lpai\smoke-result.txt`). The renderer/IPC boot chain beyond
+  `app.info` (all panes, tray, overlay) stays visual.
+- [ ] **[hw] Level 4 on the target box:** with Ollama installed on the RTX 3070, run
+  `tests/ollama-live.test.ts` (README "Verify a real install") and `npm run bench` — expect real
+  tok/s/TTFT on GPU and unload numbers reflecting VRAM, then review `release` artifacts from
+  `npm run dist` (NSIS + portable; the `--dir` layout itself is already verified).
 
 - [ ] **[hw] §16 — Produce the installer:** `npm run dist` on Windows (icons are
   committed: `build/icon.ico` multi-size + `icon.png`; `build/installer.nsh` carries the
