@@ -7,6 +7,7 @@
 
 import type { ContextBuildRequest, ContextItem } from '../../shared/types/context.js';
 import type { ChatMessage } from '../../shared/types/models.js';
+import { effectivePromptBudget } from '../../shared/util/limits.js';
 import { estimateTokens } from '../../shared/util/text.js';
 import type { ConfigService } from '../core/config.js';
 import type { SubLogger } from '../core/logger.js';
@@ -39,9 +40,17 @@ export class ContextEngine {
 
   async build(req: ContextBuildRequest): Promise<BuiltContext> {
     const cfg = this.config.get();
-    const budget =
+    // Fit to the window the adapter ACTUALLY requests (num_ctx from
+    // ai.runtimeContextTokens, hardware-clamped — shared/util/limits mirrors the
+    // Ollama adapter). A bigger assemble-budget than the sent context meant
+    // Ollama silently pruned the difference: the transparency panel (§63)
+    // claimed tokens the model never saw.
+    const pressure = cfg.performance.mode === 'LOW_RESOURCE' ? 0.6 : 1;
+    const budget = effectivePromptBudget(
       (req.taskClass === 'chat' || req.taskClass === 'informational' ? cfg.ai.contextTokenBudget : cfg.ai.agentContextTokenBudget) *
-      (cfg.performance.mode === 'LOW_RESOURCE' ? 0.6 : 1);
+        pressure,
+      cfg.ai.runtimeContextTokens,
+    );
     const candidates: ContextItem[] = [];
     const add = (item: Omit<ContextItem, 'estimatedTokens'>): void => {
       candidates.push({ ...item, estimatedTokens: estimateTokens(item.content) });

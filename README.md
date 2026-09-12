@@ -148,7 +148,9 @@ adjustable under Settings → AI (`runtime context (tokens)`). It is deliberatel
 advertised maximum: some models (qwen3-class) ship a 262144-token default that makes Ollama reserve
 tens of GB of KV cache and die on a laptop. The value is additionally clamped to a ceiling derived
 from installed RAM, so a wrong setting cannot OOM the machine — bigger context = slower prompt
-processing and more VRAM; measure the effect with `npm run bench` before raising it.
+processing and more VRAM; measure the effect with `npm run bench` before raising it. The context
+assembler (chat/agent budgets) is fitted to **this same window** minus a 25 % answer reserve, so a
+larger assemble-budget never silently loses content to server-side pruning.
 
 ### Recording analysis: what "real testing" covers
 

@@ -236,6 +236,15 @@ describe('num_ctx policy (never the advertised model maximum)', () => {
     expect(h2.chatBodies.at(-1)!.options!.num_ctx).toBe(4096);
   });
 
+  it('0 / negative / NaN config values count as UNSET (safe default 4096, never the floor)', async () => {
+    const h = harness();
+    const a = new OllamaAdapter({ baseUrl: 'http://test', fetchImpl: h.fetchImpl, context: { defaultTokens: () => 0 } });
+    await a.chat.generate(req());
+    expect(h.chatBodies.at(-1)!.options!.num_ctx).toBe(4096);
+    await a.chat.generate(req({ contextTokens: -100 }));
+    expect(h.chatBodies.at(-1)!.options!.num_ctx).toBe(4096);
+  });
+
   it('hardware ceiling table: coarse, monotone, always within [4096, 32768]', () => {
     const gib = (n: number) => n * 1024 ** 3;
     expect(hardwareContextCeiling(gib(6))).toBe(4096);

@@ -31,6 +31,16 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   adapter ships. Add `providers/adapters/voiceServers.ts`: whisper.cpp HTTP server
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
+- [x] **[code] Twelfth pass — live-suite activation flag:** `LPAI_LIVE_OLLAMA` (any value except
+  0/false/off) enables `tests/ollama-live.test.ts` with the app's default endpoint; `LPAI_OLLAMA_URL`
+  remains endpoint override + legacy activation; explicit-off wins; 6 always-on activation unit
+  tests pin the precedence so silent "9 skipped" can never return. Logic in `src/shared/ollamaLiveEnv.ts`.
+- [x] **[code] Thirteenth pass — budget/wire alignment:** the context engine fits prompts to the
+  SAME window the adapter requests (shared/util/limits is the one policy: num_ctx clamp + prompt fit
+  with 25% answer reserve), so `contextTokenBudget` above `runtimeContextTokens` can no longer be
+  silently pruned by Ollama while §63 reports the unpruned number; 0/negative values count as unset
+  everywhere; openaiCompat stream gained its part-3 regression tests (max_tokens, mid-stream abort,
+  body release).
 - [x] **[code] Eleventh pass (part 4) — live-suite model selection honesty (real-Windows failures):**
   embedding-only models never advertise chat (was a production capability bug: alphabetical listing
   made nomic-embed-text the default "chat model" everywhere), live tests resolve one capability-gated

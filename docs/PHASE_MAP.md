@@ -320,6 +320,27 @@ ollama 0.34.0 with only the flag set and OLLAMA_CONTEXT_LENGTH=8192). Note: `LPA
 set on the box is not a project variable (client knob = config ai.runtimeContextTokens; server
 knob = OLLAMA_CONTEXT_LENGTH) and is ignored by design.
 
+## Thirteenth pass — budget/wire alignment (contextEngine fit == adapter num_ctx)
+
+Follow-up of the Windows context-bug class: `ContextEngine.build()` fitted prompts to
+`ai.contextTokenBudget`/`agentContextTokenBudget` (8192/16384 defaults) while every request now
+carries an explicit `num_ctx` from `ai.runtimeContextTokens` (4096 default, hardware-clamped) —
+whenever the assemble budget exceeded the wire window, Ollama pruned the difference server-side
+while the §63 transparency panel reported the unpruned number. One policy now serves both:
+`src/shared/util/limits.ts` (MIN_NUM_CTX, DEFAULT_NUM_CTX, hardwareContextCeiling,
+clampRuntimeContext, effectivePromptBudget = min(user budget, window − 25 % answer reserve,
+floor 512)); the ollama adapter's resolveNumCtx delegates to it (public re-exports kept for
+tests), the context engine caps its budget through the SAME function, so "budget: X" can never
+describe a prompt the model cannot see. Semantics tightened in the same move: `0`/negative/NaN
+request or config values count as UNSET (safe 4096) instead of clamping to the 512 floor.
+Tests: tests/budget-alignment.test.ts (5: clamp table, fit math incl. cross-check that the fitted
+budget never exceeds the clamped window, engine-level via makeTestApp — 8192 @ 2048 window reports
+and fits exactly 1536; smaller user budgets never inflated) + 1 unset-semantics pin in
+ollama-context + new tests/openai-compat-stream.test.ts (3) closing the part-3 coverage gap on the
+remote adapter (max_tokens on the stream path, request-lifetime abort, body release on break).
+Live suite re-run against real ollama (delegation risk): 15/15, num_ctx unchanged (2048/4096,
+advertised 32768 informational). Default suite 125+10, lint 0/0, typecheck+build clean.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

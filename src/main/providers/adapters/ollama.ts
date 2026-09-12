@@ -2,7 +2,10 @@
  * Ollama adapter — an adapter, never the core (spec §6, RULE 8).
  * Talks to the local Ollama HTTP API via fetch; no SDK dependency.
  */
-import { totalmem } from 'node:os';
+import { clampRuntimeContext, hardwareContextCeiling, MIN_NUM_CTX } from '../../../shared/util/limits.js';
+
+// re-exported for existing imports/tests; the policy lives in shared/util/limits
+export { hardwareContextCeiling, MIN_NUM_CTX } from '../../../shared/util/limits.js';
 
 import type { ModelCapability } from '../../../shared/types/capabilities.js';
 import { nowIso } from '../../../shared/types/common.js';
@@ -33,23 +36,10 @@ export interface OllamaAdapterOptions {
   context?: { defaultTokens?: number | (() => number); maxTokens?: number | (() => number) };
 }
 
-/** Context sizes below this are useless for tool loops; above the clamp, dangerous. */
-export const MIN_NUM_CTX = 512;
-
-/** Coarse hardware ceiling for the runtime context based on installed RAM. */
-export function hardwareContextCeiling(totalMemBytes = totalmem()): number {
-  const gb = totalMemBytes > 0 ? totalMemBytes / 1024 ** 3 : 0;
-  if (gb <= 0 || !Number.isFinite(gb)) return 8192; // unknown environment -> conservative
-  if (gb < 8) return 4096;
-  if (gb < 12) return 8192;
-  if (gb < 24) return 16384; // a 16 GB laptop must not stream a 262k KV cache
-  return 32768;
-}
-
 function readLive(v: number | (() => number) | undefined): number | undefined {
   if (v === undefined) return undefined;
   const n = typeof v === 'function' ? v() : v;
-  return Number.isFinite(n) ? n : undefined;
+  return Number.isFinite(n) && n > 0 ? n : undefined; // 0/negative/NaN = unset -> safe default
 }
 
 interface OllamaTagModel {
@@ -114,9 +104,10 @@ export class OllamaAdapter implements ModelProviderAdapter {
    * hardware ceiling]. Never derived from the model's advertised maximum.
    */
   private resolveNumCtx(req: GenerationRequest): number {
-    const requested = req.contextTokens ?? readLive(this.contextOpts?.defaultTokens) ?? 4096;
+    const explicit =
+      typeof req.contextTokens === 'number' && Number.isFinite(req.contextTokens) && req.contextTokens > 0 ? req.contextTokens : undefined;
     const ceiling = readLive(this.contextOpts?.maxTokens) ?? hardwareContextCeiling();
-    return Math.max(MIN_NUM_CTX, Math.min(Math.floor(requested), Math.max(MIN_NUM_CTX, Math.floor(ceiling))));
+    return clampRuntimeContext(explicit ?? readLive(this.contextOpts?.defaultTokens), ceiling);
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
