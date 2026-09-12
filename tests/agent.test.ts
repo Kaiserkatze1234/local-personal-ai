@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { estimateTokens } from '../src/shared/util/text.js';
 import { makeTestApp } from './helpers.js';
 
 describe('agent core', () => {
@@ -122,6 +123,40 @@ describe('agent core', () => {
       expect(out.task.status).toBe('failed');
       expect(out.task.errors.length).toBeGreaterThan(0);
       expect(out.finalText).toContain('could not complete');
+    } finally {
+      await t.cleanup();
+    }
+  });
+});
+
+describe('agent loop window guard (fourteenth pass)', () => {
+  it('folds older tool rounds instead of silently overflowing the requested num_ctx', async () => {
+    const t = await makeTestApp({
+      writeScope: true,
+      config: { tools: { permissionMode: 'ADVANCED' }, ai: { runtimeContextTokens: 2048 } },
+      turns: [
+        { text: 'reading part 1', toolCalls: [{ id: 'r1', name: 'read_file', args: { path: 'big.txt' } }] },
+        { text: 'reading part 2', toolCalls: [{ id: 'r2', name: 'read_file', args: { path: 'big.txt' } }] },
+        { text: 'done' },
+      ],
+    });
+    try {
+      writeFileSync(join(t.dir, 'big.txt'), 'lorem ipsum dolor '.repeat(300)); // ~5.4 KB -> ~1.4k tokens per tool result
+      const run = await t.app.agent.run({ userText: 'read big.txt twice and tell me when done', mode: 'task', images: [] } as never);
+      expect(run.finalText).toContain('done');
+      const reqs = t.mock.requests.filter((r) => Array.isArray(r.messages) && r.messages.length > 0);
+      expect(reqs.length).toBeGreaterThanOrEqual(3);
+      const last = reqs.at(-1)!.messages!;
+      expect(last[0]!.role).toBe('system'); // system instructions must survive every round
+      const est = last.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)), 0);
+      expect(est, `fitted prompt ${est} must be near the 1536-token cap, not the raw loop growth`).toBeLessThanOrEqual(1536 + 1400); // slack = one forced oversized newest group at most
+      expect(
+        last.some((m) => typeof m.content === 'string' && m.content.startsWith('[Earlier conversation folded')),
+        'fold note must be present',
+      ).toBe(true);
+      expect(last.some((m) => m.role === 'user' && typeof m.content === 'string' && m.content.includes('read big.txt twice'))).toBe(true); // the request itself is pinned
+      // and without folding the array would have been much bigger — proof the guard actually fired
+      expect(last.length).toBeLessThan(9);
     } finally {
       await t.cleanup();
     }

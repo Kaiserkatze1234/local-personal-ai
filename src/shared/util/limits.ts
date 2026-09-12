@@ -35,14 +35,23 @@ export function clampRuntimeContext(requested: number | undefined, ceiling = har
  * this next to clampRuntimeContext guarantees "budget: 8192" in the
  * transparency panel (§63) never describes a prompt Ollama would prune to 4k.
  */
+/** Prompt-fit cap for a runtime window: window minus the completion reserve (floor MIN). */
+export function answerReserveCap(
+  runtimeContextTokens: number | undefined,
+  outputReserveFrac = 0.25,
+  ceiling = hardwareContextCeiling(),
+): number {
+  const window = clampRuntimeContext(runtimeContextTokens, ceiling);
+  return Math.max(MIN_NUM_CTX, Math.floor(window * (1 - Math.min(0.9, Math.max(0, outputReserveFrac)))));
+}
+
 export function effectivePromptBudget(
   configuredBudget: number,
   runtimeContextTokens: number,
   outputReserveFrac = 0.25,
   ceiling = hardwareContextCeiling(),
 ): number {
-  const window = clampRuntimeContext(runtimeContextTokens, ceiling);
-  const fit = Math.floor(window * (1 - Math.min(0.9, Math.max(0, outputReserveFrac))));
+  const fit = answerReserveCap(runtimeContextTokens, outputReserveFrac, ceiling);
   const configured =
     typeof configuredBudget === 'number' && Number.isFinite(configuredBudget) && configuredBudget > 0
       ? Math.floor(configuredBudget)

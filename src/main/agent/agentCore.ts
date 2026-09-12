@@ -12,6 +12,8 @@ import type { AppBus } from '../../shared/types/events.js';
 import type { ChatMessage, GenerationRequest, ToolCallSpec } from '../../shared/types/models.js';
 import type { TaskRecord } from '../../shared/types/task.js';
 import type { ToolResult } from '../../shared/types/tools.js';
+import { answerReserveCap } from '../../shared/util/limits.js';
+import { fitMessagesToWindow } from '../../shared/util/messageFit.js';
 import { estimateTokens } from '../../shared/util/text.js';
 import type { CheckpointService } from '../checkpoints/checkpointService.js';
 import type { ConfigService } from '../core/config.js';
@@ -143,11 +145,26 @@ export class AgentCore {
       let finalText = '';
       let iterations = 0;
       const writtenFiles: string[] = [];
+      // Send-side window guard: the loop appends assistant/tool groups per
+      // iteration; anything beyond the num_ctx actually requested would be
+      // silently pruned by the provider (system prompt lost mid-task). Same
+      // shared policy as ContextEngine/adapter — newest groups win, older fold
+      // into a note, assistant+tool groups stay atomic (see shared/util/messageFit).
+      const promptCap = answerReserveCap(cfg.ai.runtimeContextTokens);
+      const fitForWindow = (): void => {
+        const fit = fitMessagesToWindow(chatMsgs, promptCap);
+        if (fit.folded > 0) {
+          chatMsgs.length = 0;
+          chatMsgs.push(...fit.messages);
+          this.log.info(`agent loop: folded ${fit.folded} older messages to fit the ${promptCap}-token prompt window`);
+        }
+      };
       const { provider } = this.providers.chatFor(decision.modelId);
       const supportsTools = decision.model.capabilities.includes('tool_calling');
 
       while (iterations < MAX_TOOL_ITERATIONS) {
         iterations++;
+        fitForWindow();
         const req: GenerationRequest = {
           modelId: decision.modelId,
           messages: chatMsgs,
@@ -190,6 +207,7 @@ export class AgentCore {
             createdAt: nowIso(),
             content: `Verification failed after your changes:\n${verificationResult.details.slice(0, 1500)}\nInspect what is wrong, apply the smallest reasonable fix with the file tools, then briefly state what you changed.`,
           });
+          fitForWindow();
           try {
             const repair = await this.generateWithRetry(
               provider.adapter,

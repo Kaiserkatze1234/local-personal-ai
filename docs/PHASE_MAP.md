@@ -341,6 +341,32 @@ remote adapter (max_tokens on the stream path, request-lifetime abort, body rele
 Live suite re-run against real ollama (delegation risk): 15/15, num_ctx unchanged (2048/4096,
 advertised 32768 informational). Default suite 125+10, lint 0/0, typecheck+build clean.
 
+## Fourteenth pass — agent-loop send guard (bounded growth per iteration)
+
+The thirteenth pass fixed the FIRST-turn fit; the loop itself was still unbounded: every tool
+iteration appends assistant+tool groups (tool results are NOT truncated anywhere — toModelSafe
+only drops preview fields) and MAX_TOOL_ITERATIONS bounds only the count, so a multi-round task
+could send far beyond the num_ctx requested on the wire — where Ollama silently prunes the
+LEADING prompt, i.e. the system instructions and early findings vanish mid-task with no error.
+Fix: `shared/util/messageFit.ts` `fitMessagesToWindow()` runs before EVERY generate in the tool
+loop and the verification-repair pass (agentCore `fitForWindow()`): keeps whole groups newest-
+first inside the same `answerReserveCap(cfg.ai.runtimeContextTokens)` policy as ContextEngine/
+adapter (new shared export; effectivePromptBudget now delegates to it — identical numbers),
+ALWAYS keeps the system turn and the forced-newest group (even if that alone is oversized —
+better a pruned tail than losing what the model must act on next), PINs the current user request
+(the bare last user message — it carries the assembled ContextEngine block), and folds everything
+older into one compact note (`[Earlier conversation folded … — N messages): …]`). Atomicity rule:
+assistant-with-toolCalls + its role:'tool' results are never split (strict providers reject a
+dangling tool_calls sequence — same reasoning for openaiCompat). Idempotent + zero-copy when the
+array already fits (returns the same reference). Tests: 5 unit pins (folding order, pinned
+request, atomic groups never split — g1+g2 dropped whole, oversized-newest kept, cap+slack
+invariant over three shapes) + 1 integration pin running the REAL loop (3 scripted mock rounds
+reading a 5.4 KB file under runtimeContextTokens 2048): the last captured request carries the
+fold note, starts with system, contains the pinned request, and fits cap+one-group — without the
+guard it would have run ~2.9k tokens over. Live suite untouched by design (ollama.ts unchanged;
+refactor of effectivePromptBudget verified by the unchanged budget-alignment numbers). Default
+suite 131 passed + 10 opt-in skips (141), lint 0/0, typecheck+build clean.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing
