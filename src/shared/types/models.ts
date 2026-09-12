@@ -91,11 +91,20 @@ export interface GenerationResult {
   toolCalls: ToolCallSpec[];
   usage?: GenerationUsage;
   finishReason: 'stop' | 'tool_calls' | 'length' | 'cancelled' | 'error';
+  /**
+   * Reasoning/thinking content the provider marked SEPARATELY from the visible
+   * answer (Ollama qwen3-class: message.thinking). Never merged into `text` —
+   * UIs may offer it collapsed; empty `text` + populated `reasoning` with
+   * finishReason 'length' means the answer did not fit the requested cap.
+   */
+  reasoning?: string;
   error?: string;
 }
 
 export interface GenerationChunk {
   textDelta: string;
+  /** reasoning-phase delta — kept apart from user-visible text (see GenerationResult.reasoning). */
+  reasoningDelta?: string;
 }
 
 export interface ProviderHealth {

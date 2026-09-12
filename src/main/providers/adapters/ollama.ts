@@ -89,6 +89,7 @@ export class OllamaAdapter implements ModelProviderAdapter {
   private timeoutMs: number;
   private contextOpts: OllamaAdapterOptions['context'];
   private contextCache = new Map<string, number>();
+  private thinkCapCache = new Map<string, boolean>();
 
   constructor(opts: OllamaAdapterOptions = {}) {
     this.id = opts.id ?? 'ollama';
@@ -108,6 +109,39 @@ export class OllamaAdapter implements ModelProviderAdapter {
       typeof req.contextTokens === 'number' && Number.isFinite(req.contextTokens) && req.contextTokens > 0 ? req.contextTokens : undefined;
     const ceiling = readLive(this.contextOpts?.maxTokens) ?? hardwareContextCeiling();
     return clampRuntimeContext(explicit ?? readLive(this.contextOpts?.defaultTokens), ceiling);
+  }
+
+  /**
+   * Below this explicit maxTokens budget a thinking model reliably spends the
+   * whole cap on reasoning and returns an EMPTY visible answer (real qwen3
+   * failure: num_predict 64 -> content '' + done_reason 'length'), so bounded
+   * short requests to thinking-capable models disable thinking for the request.
+   */
+  static readonly MIN_TOKENS_FOR_THINKING = 1024;
+
+  /** /api/show `capabilities` (cached; missing/older shapes = not thinking-capable). */
+  private async modelThinkingCapable(model: string): Promise<boolean> {
+    const hit = this.thinkCapCache.get(model);
+    if (hit !== undefined) return hit;
+    let ok = false;
+    try {
+      const res = await this.request('/api/show', { method: 'POST', body: JSON.stringify({ name: model }) });
+      if (res.ok) {
+        const j = (await res.json()) as { capabilities?: unknown };
+        ok = Array.isArray(j.capabilities) && j.capabilities.includes('thinking');
+      }
+    } catch {
+      ok = false; // capability probe must never break generation
+    }
+    this.thinkCapCache.set(model, ok);
+    return ok;
+  }
+
+  /** think:false ONLY for a small explicit cap on a thinking-capable model; otherwise untouched. */
+  private async resolveThinkOpt(model: string, req: GenerationRequest): Promise<boolean | undefined> {
+    const cap = req.maxTokens && req.maxTokens > 0 ? Math.floor(req.maxTokens) : 0;
+    if (!cap || cap >= OllamaAdapter.MIN_TOKENS_FOR_THINKING) return undefined;
+    return (await this.modelThinkingCapable(model)) ? false : undefined;
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
@@ -247,6 +281,8 @@ export class OllamaAdapter implements ModelProviderAdapter {
       };
       if (req.keepAliveSec !== undefined) body.keep_alive = req.keepAliveSec;
       if (req.jsonMode) body.format = 'json';
+      const genThink = await this.resolveThinkOpt(model, req);
+      if (genThink !== undefined) body.think = genThink;
       if (req.tools && req.tools.length > 0)
         body.tools = req.tools.map((t) => ({
           type: 'function',
@@ -256,7 +292,12 @@ export class OllamaAdapter implements ModelProviderAdapter {
       if (!res.ok) throw new Error(`Ollama generation failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
       const j = (await res.json()) as {
         done?: boolean;
-        message?: { content?: string; tool_calls?: { function: { name: string; arguments?: Record<string, unknown> } }[] };
+        done_reason?: string;
+        message?: {
+          content?: string;
+          thinking?: string;
+          tool_calls?: { function: { name: string; arguments?: Record<string, unknown> } }[];
+        };
         prompt_eval_count?: number;
         eval_count?: number;
       };
@@ -265,11 +306,17 @@ export class OllamaAdapter implements ModelProviderAdapter {
         name: tc.function.name,
         args: tc.function.arguments ?? {},
       }));
+      // message.thinking is REAL generated content — keep it, but in its own
+      // field: mixing it into text would show reasoning as the answer.
+      const thinking = typeof j.message?.thinking === 'string' && j.message.thinking.length > 0 ? j.message.thinking : undefined;
       return {
         text: j.message?.content ?? '',
+        ...(thinking ? { reasoning: thinking } : {}),
         toolCalls,
         usage: { inputTokens: j.prompt_eval_count, outputTokens: j.eval_count },
-        finishReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+        // the server states WHY it stopped — 'length' (truncated by num_predict)
+        // must not be reported as a clean 'stop'
+        finishReason: toolCalls.length > 0 ? 'tool_calls' : j.done_reason === 'length' ? 'length' : 'stop',
       };
     },
 
@@ -288,6 +335,8 @@ export class OllamaAdapter implements ModelProviderAdapter {
         },
       };
       if (req.keepAliveSec !== undefined) body.keep_alive = req.keepAliveSec;
+      const streamThink = await this.resolveThinkOpt(model, req);
+      if (streamThink !== undefined) body.think = streamThink;
       const res = await this.request('/api/chat', { method: 'POST', body: JSON.stringify(body), signal: req.signal }, 600_000);
       if (!res.ok || !res.body) throw new Error(`Ollama stream failed: HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -306,10 +355,11 @@ export class OllamaAdapter implements ModelProviderAdapter {
             buf = buf.slice(nl + 1);
             if (!line) continue;
             try {
-              const j = JSON.parse(line) as { message?: { content?: string }; done?: boolean; error?: string };
+              const j = JSON.parse(line) as { message?: { content?: string; thinking?: string }; done?: boolean; error?: string };
               if (j.error) throw new Error(`Ollama: ${j.error}`);
               const delta = j.message?.content ?? '';
-              if (delta) yield { textDelta: delta };
+              const reasoning = j.message?.thinking ?? '';
+              if (delta || reasoning) yield { textDelta: delta, ...(reasoning ? { reasoningDelta: reasoning } : {}) };
             } catch (err) {
               if (err instanceof SyntaxError) continue; // partial line
               throw err;

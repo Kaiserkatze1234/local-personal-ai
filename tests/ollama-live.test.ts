@@ -62,12 +62,17 @@ live('real Ollama provider (§6/§7/§56)', () => {
   let chatModel = '';
   let embedModel = '';
 
+  // Ollama list entries may carry the implicit ':latest' tag while pins are often
+  // written bare — treat those as the same model (ollama's own resolution rule).
+  const sameName = (listed: string, pin: string) =>
+    listed === pin || listed === `${pin}:latest` || `${listed}`.replace(/:latest$/, '') === pin;
+
   beforeAll(async () => {
     const all = await adapter.discoverModels();
     // chat-capable = advertises text_generation and is NOT embedding-only
     const chatCapable = all.filter((m) => m.capabilities.includes('text_generation') && !m.capabilities.includes('embeddings'));
     if (wantModel) {
-      const pinned = chatCapable.find((m) => m.name === wantModel);
+      const pinned = chatCapable.find((m) => sameName(m.name, wantModel));
       if (!pinned) {
         throw new Error(
           `LPAI_OLLAMA_MODEL='${wantModel}' is not an installed chat-capable model ` +
@@ -82,7 +87,7 @@ live('real Ollama provider (§6/§7/§56)', () => {
     if (!chatModel) throw new Error('no chat-capable model installed — `ollama pull` a chat model first');
     const embedCapable = all.filter((m) => m.capabilities.includes('embeddings'));
     if (wantEmbed) {
-      const pinned = embedCapable.find((m) => m.name === wantEmbed);
+      const pinned = embedCapable.find((m) => sameName(m.name, wantEmbed));
       if (!pinned) throw new Error(`LPAI_OLLAMA_EMBED_MODEL='${wantEmbed}' is not an installed embedding-capable model`);
       embedModel = pinned.name;
     } else {

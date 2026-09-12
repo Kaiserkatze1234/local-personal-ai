@@ -35,6 +35,12 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   0/false/off) enables `tests/ollama-live.test.ts` with the app's default endpoint; `LPAI_OLLAMA_URL`
   remains endpoint override + legacy activation; explicit-off wins; 6 always-on activation unit
   tests pin the precedence so silent "9 skipped" can never return. Logic in `src/shared/ollamaLiveEnv.ts`.
+- [x] **[code] Fifteenth pass — qwen3 thinking answers:** `message.thinking` kept as `reasoning`
+  (never in visible text), server `done_reason` honored ('length' ≠ 'stop'), bounded small-cap
+  requests to thinking-capable models (per /api/show capabilities) send `think:false` so short
+  non-streaming answers stop coming back EMPTY (product bug beyond the test); stream reasoning
+  arrives as `reasoningDelta`, kept apart from `textDelta`. Live tests untouched; verified 15/15
+  against real qwen3:0.6b. PHASE_MAP holds the raw response evidence.
 - [x] **[code] Fourteenth pass — agent-loop send guard:** every generate in the tool loop (and the
   repair pass) is fitted to the same shared window policy — system turn + current request pinned,
   assistant+tool groups atomic, older rounds folded into one note — so a multi-round task can no

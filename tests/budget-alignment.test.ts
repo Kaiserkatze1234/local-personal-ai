@@ -135,7 +135,7 @@ describe('fitMessagesToWindow (agent-loop send guard)', () => {
       [2000, 6],
       [800, 10],
       [4000, 4],
-    ]) {
+    ] as [number, number][]) {
       const ms: ChatMessage[] = [msg('system', 30), msg('user', 120)];
       for (let i = 0; i < n; i++)
         ms.push(msg('assistant', 200, { toolCalls: [{ id: `c${i}`, name: 't', args: {} }] }), msg('tool', 250, { toolCallId: `c${i}` }));

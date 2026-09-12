@@ -367,6 +367,36 @@ guard it would have run ~2.9k tokens over. Live suite untouched by design (ollam
 refactor of effectivePromptBudget verified by the unchanged budget-alignment numbers). Default
 suite 131 passed + 10 opt-in skips (141), lint 0/0, typecheck+build clean.
 
+## Fifteenth pass — qwen3 thinking responses: keep reasoning, honor done_reason, guard tiny budgets
+
+Real-Windows live failure (14/15): non-streaming probe `text.trim().length > 0` got an EMPTY string
+from qwen3:4b. Raw capture explains it (ollama 0.34.0): with `num_predict: 64` the model spends the
+WHOLE cap on its thinking phase — the response carries `message.content: ""`, the generated text in
+`message.thinking: "Okay, the user wants me to..."`, and `done_reason: "length"`, while `eval_count: 64`.
+The adapter read ONLY `message.content` (discarding valid generated output) and hardcoded
+finishReason 'stop' (masking the truncation). Streaming passed because thinking deltas (`content:""`
++ `thinking:"tok"`) simply yield nothing and the short answer fit the remainder.
+
+Production fix (ollama adapter, capability-driven — no model names):
+1. `message.thinking` is kept, never discarded and never mixed into visible text:
+   `GenerationResult.reasoning` + `GenerationChunk.reasoningDelta` (shared types, optional fields).
+2. `finishReason` honors the server's `done_reason` ('length' stays 'length').
+3. NEW guard, both paths: bounded `maxTokens < 1024` on a model whose /api/show `capabilities`
+   include 'thinking' -> request body `think: false` (verified raw: qwen3 then answers
+   'LPONAMA-OK' within 64 tokens). Cached capability probe; /api/show missing/old/error ->
+   never send `think` (qwen2.5-class untouched byte-for-byte; 0.34 also tolerates a stray
+   think:false on non-thinking models — confirmed). This also fixes the GENERAL product bug:
+   every small-cap non-streaming feature (voice answers, quick classify) on qwen3-class models
+   would otherwise return empty assistant bubbles.
+Live tests UNCHANGED (no weakening, no skip, no model swap): the failing assertion now passes for
+real. Verified against a genuine thinking model in-sandbox: pinned `LPAI_OLLAMA_MODEL=qwen3:0.6b`
+(+ bare-name embed pin) -> live 15/15 with `[live] exact num_ctx sent: 2048`; unpinned qwen2.5 run
+15/15. Also fixed a harness pin bug the loud validation caught first: pins now resolve bare-name vs
+':latest' list forms (Ollama's own rule). Fixtures: tests/ollama-thinking.test.ts (5) using the
+captured raw JSON shapes verbatim — truncation normalization, think-guard matrix (large/unbounded/
+non-thinking/show-fail -> never sent), stream separation (reasoningDelta XOR textDelta), legacy
+stream byte-identical. Default suite 136+10 (146, 21 files), lint 0/0, typecheck+build clean.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing
