@@ -48,16 +48,23 @@ export class OpenAiCompatAdapter implements ModelProviderAdapter {
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
+    // Chained abort (same fix as the Ollama adapter): the internal timeout AND
+    // a caller-provided signal both cancel the request, instead of one
+    // silently replacing the other.
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const caller = init.signal as AbortSignal | undefined | null;
+    const onCallerAbort = (): void => ctrl.abort();
+    caller?.addEventListener('abort', onCallerAbort);
     try {
       return await this.fetch(`${this.baseUrl}${pathname}`, {
         ...init,
         headers: { ...this.headers(), ...(init.headers as object) },
-        signal: init.signal ?? ctrl.signal,
+        signal: ctrl.signal,
       });
     } finally {
       clearTimeout(timer);
+      caller?.removeEventListener('abort', onCallerAbort);
     }
   }
 

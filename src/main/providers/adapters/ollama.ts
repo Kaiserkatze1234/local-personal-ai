@@ -72,8 +72,16 @@ export class OllamaAdapter implements ModelProviderAdapter {
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
+    // Chained abort: BOTH the internal timeout and a caller-provided signal
+    // (user pressing "stop") must cancel the HTTP request — an abandoned
+    // stream would otherwise leave the model generating and the GPU busy.
+    // (Found by the real-Ollama live test: spreading `init` then setting
+    // `signal` silently overrode the caller's signal.)
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const caller = init.signal as AbortSignal | undefined | null;
+    const onCallerAbort = (): void => ctrl.abort();
+    caller?.addEventListener('abort', onCallerAbort);
     try {
       return await this.fetch(`${this.baseUrl}${pathname}`, {
         ...init,
@@ -82,6 +90,7 @@ export class OllamaAdapter implements ModelProviderAdapter {
       });
     } finally {
       clearTimeout(timer);
+      caller?.removeEventListener('abort', onCallerAbort);
     }
   }
 

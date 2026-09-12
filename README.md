@@ -149,3 +149,27 @@ frames are genuine JPEGs and that their bytes reach the vision seam, then checks
 summary). To enable it locally: `npm i --no-save ffmpeg-static ffprobe-static` (skips automatically
 otherwise). What tests cannot substitute: summary *quality* — that needs your GPU + a real vision
 model (`ollama pull llava` or `qwen2.5-vl`), then the 🎬 button on a screen recording of your own.
+
+### Verify a real install (Level 4/5 on your machine)
+
+Three checks, none of them mock anything:
+
+1. **Boot smoke** — `set LPAI_SMOKE=1` (PowerShell: `$env:LPAI_SMOKE='1'`) then run the app
+   (`npm run dev`, or the portable `.exe`). The main process creates the window, waits for the
+   renderer to load, performs a real `app.info` IPC round-trip through the preload bridge against
+   the booted core (SQLite open), writes `%APPDATA%\lpai\smoke-result.txt` with `SMOKE_OK` and
+   exits 0 — or exits 1 with the failure reason. This is the one-command answer to "does Electron
+   actually start here".
+2. **Real provider test** — with Ollama running and any chat model installed:
+   ```powershell
+   $env:LPAI_OLLAMA_URL='http://127.0.0.1:11434'; $env:LPAI_OLLAMA_MODEL='qwen2.5:0.5b'
+   npx vitest run tests/ollama-live.test.ts
+   ```
+   This exercises the production adapter against the real server: health, discovery, genuine
+   usage counters, streaming, cancellation, embedding similarity, and a `/api/ps`-verified model
+   eviction. It skips cleanly when the env var is absent, so the normal suite never needs a server.
+3. **Numbers** — `npm run bench` (above). All three ran green here against a real Ollama
+   (qwen2.5:0.5b, CPU) before shipping.
+
+Note: `npm run dist` lets electron-builder rebuild better-sqlite3 for the Electron ABI *in place*;
+a `postdist` hook restores the Node-ABI build afterwards so `npm test` keeps working.

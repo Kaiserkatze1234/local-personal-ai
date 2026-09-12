@@ -25,6 +25,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "dist": "npm run build && electron-builder --win",
+    "postdist": "npm rebuild better-sqlite3",
     "preview": "vite preview"
   },
   "dependencies": {

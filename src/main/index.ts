@@ -276,6 +276,43 @@ async function boot(): Promise<void> {
     });
     if (devUrl) void mainWindow.loadURL(devUrl);
     else void mainWindow.loadFile(join(rendererDir, 'index.html'));
+
+    // One-command boot validation: LPAI_SMOKE=1 exercises the whole chain that a
+    // real launch depends on — window creation, renderer bundle load, preload
+    // bridge exposure, IPC round-trip into the booted core (SQLite already open) —
+    // then writes <dataDir>/smoke-result.txt and exits 0/1. On the target Windows
+    // box: `$env:LPAI_SMOKE='1'; npm run dev` (or the portable exe) answers
+    // "does the app actually start" without clicking anything.
+    if (process.env.LPAI_SMOKE === '1') {
+      const w = mainWindow;
+      const finish = (ok: boolean, detail: string): void => {
+        try {
+          writeFileSync(join(dataDir, 'smoke-result.txt'), `${ok ? 'SMOKE_OK' : 'SMOKE_FAIL'} ${new Date().toISOString()} ${detail}\n`);
+        } catch {
+          /* result file is a convenience; the exit code is the contract */
+        }
+        console.log(`${ok ? 'SMOKE_OK' : 'SMOKE_FAIL'} ${detail}`);
+        app.exit(ok ? 0 : 1);
+      };
+      const t0 = Date.now();
+      w?.webContents.once('did-finish-load', () => {
+        void w.webContents
+          .executeJavaScript(
+            `(async () => {
+              if (!window.lpai || typeof window.lpai.invoke !== 'function') return 'FAIL: preload bridge missing';
+              const r = await window.lpai.invoke('app.info');
+              if (!r || !r.ok) return 'FAIL: ipc error ' + JSON.stringify(r && r.error).slice(0, 200);
+              return 'renderer+ipc ok: app.info ' + JSON.stringify(r.data).slice(0, 120);
+            })()`,
+          )
+          .then((d) => finish(String(d).startsWith('renderer+ipc ok'), `${String(d)} (${Date.now() - t0}ms)`))
+          .catch((e) => finish(false, `evaluate failed: ${String(e)}`));
+      });
+      w?.webContents.once('did-fail-load', (_e, code, desc) =>
+        finish(false, `renderer load failed: ${code} ${desc} (${Date.now() - t0}ms)`),
+      );
+    }
+
     mainWindow.on('close', (e) => {
       flushPlacement();
       const cfg = core?.getConfig();
