@@ -180,6 +180,35 @@ Installed a genuine Ollama v0.34.0 (CPU) with `qwen2.5:0.5b` + `nomic-embed-text
   `node_modules` in place and breaks the Node-ABI test binding → added `postdist` restore.
   NSIS/portable targets + install/uninstall on Windows stay §B.
 
+## Tenth build pass — the app booted for real, and looked right
+
+Priority 2 finally executed beyond "main process boots": this sandbox can run Electron after all —
+system libs were missing, but rootless provisioning works: download Debian 13 `.deb`s for the
+12-lib ldd closure (dpkg-deb -x into /tmp/pfx, delete the shipped libc/ld to avoid shadowing), plus
+an **Xvfb patched at byte level** (single `/usr/bin\0` string → `/tmp/b1\0`, so it finds `xkbcomp`
+in the prefix). Full recipe:
+
+```bash
+cd /tmp && curl -fsSL -o Packages.xz http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz
+# resolve deps closure for: libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64
+#   libcups2t64 libgtk-3-0t64 libxkbcommon0 libasound2t64 libxdamage1 xvfb (+closure)
+# dpkg-deb -x each into /tmp/pfx; then:
+LD_LIBRARY_PATH=/tmp/pfx/usr/lib/x86_64-linux-gnu PATH=/tmp/b1:$PATH \
+  /tmp/pfx/Xvfb2 :99 -screen 0 1280x800x24 -xkbdir /tmp/pfx/usr/share/X11/xkb &
+cd repo && LD_LIBRARY_PATH=/tmp/pfx/usr/lib/x86_64-linux-gnu DISPLAY=:99 LPAI_SMOKE=1 \
+  node_modules/electron/dist/electron --no-sandbox --disable-dev-shm-usage --disable-gpu .
+```
+
+Result: `SMOKE_OK ... renderer+ipc ok: app.info (411ms)` with SQLite booted, plus the smoke now
+also saves `smoke-window.png` via `capturePage` — the first actual visual proof of the rendered UI.
+That screenshot exposed a real German-first flaw: the first-run wizard's body paragraphs were
+unwrapped raw English (only headings/bullets had `L()`). All wizard + first-screen chat strings are
+now translated, and a dictionary-coverage test (`fourth-pass.test.ts`) fails if any visible key ever
+falls back to English. `npm run smoke` added as the one-command boot check everywhere (it is what
+closes the Windows "does it start" item in §B in 20 seconds). Electron window-manager behavior
+(tray, click-through overlay, DPI) still needs the Windows box; the *app stack* itself is now
+boot-verified, not claimed.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

@@ -305,7 +305,21 @@ async function boot(): Promise<void> {
               return 'renderer+ipc ok: app.info ' + JSON.stringify(r.data).slice(0, 120);
             })()`,
           )
-          .then((d) => finish(String(d).startsWith('renderer+ipc ok'), `${String(d)} (${Date.now() - t0}ms)`))
+          .then(async (d) => {
+            const ok = String(d).startsWith('renderer+ipc ok');
+            let shot = '';
+            try {
+              if (w && ok) {
+                await new Promise((r) => setTimeout(r, 400)); // let React mount+paint first
+                const img = await w.webContents.capturePage();
+                writeFileSync(join(dataDir, 'smoke-window.png'), img.toPNG());
+                shot = ' · window screenshot: smoke-window.png';
+              }
+            } catch {
+              /* capture is best-effort proof, never a failure condition */
+            }
+            finish(ok, `${String(d)}${shot} (${Date.now() - t0}ms)`);
+          })
           .catch((e) => finish(false, `evaluate failed: ${String(e)}`));
       });
       w?.webContents.once('did-fail-load', (_e, code, desc) =>

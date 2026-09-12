@@ -53,7 +53,7 @@ export function FirstRunWizard(): ReactElement {
           <>
             <h2 style={{ marginTop: 0 }}>{L('Welcome — everything stays on this machine')}</h2>
             <p className="muted">
-              Local Personal AI runs with a runtime model you choose (Ollama or any local OpenAI-compatible server). Data lives in:{' '}
+              {L('Local Personal AI runs with a runtime model you choose (Ollama or any local OpenAI-compatible server). Data lives in:')}{' '}
               <span className="mono">{s.info?.dataDir}</span>
             </p>
             <ul className="muted">
@@ -78,16 +78,17 @@ export function FirstRunWizard(): ReactElement {
               </div>
             ) : (
               <div className="card">
-                <b>No provider detected.</b>
+                <b>{L('No provider detected.')}</b>
                 <p className="small muted">
-                  Install/start Ollama (ollama.com) and pull a model like <span className="mono">qwen2.5-coder:7b</span> for coding work,
-                  then click Re-scan. You can continue with the built-in demo model to explore the UI — it is explicitly labeled and not a
-                  real reasoning model.
+                  {L('Install/start Ollama (ollama.com) and pull a model like')} <span className="mono">qwen2.5-coder:7b</span>{' '}
+                  {L(
+                    'for coding work, then click Re-scan. You can continue with the built-in demo model to explore the UI — it is explicitly labeled and not a real reasoning model.',
+                  )}
                 </p>
                 <div className="row" style={{ marginTop: 8 }}>
                   <button onClick={() => void s.refreshProviders()}>{L('Re-scan')}</button>
                   <label className="check">
-                    <input type="checkbox" checked={useDemo} onChange={(e) => setUseDemo(e.target.checked)} /> use demo model for now
+                    <input type="checkbox" checked={useDemo} onChange={(e) => setUseDemo(e.target.checked)} /> {L('use demo model for now')}
                   </label>
                 </div>
               </div>
@@ -100,15 +101,15 @@ export function FirstRunWizard(): ReactElement {
             <h2 style={{ marginTop: 0 }}>{L('Runtime model selection')}</h2>
             {useDemo ? (
               <p className="muted">
-                Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.
+                {L('Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.')}
               </p>
             ) : chatModels.length === 0 ? (
-              <p className="muted">No chat-capable models found — go back and re-scan, or enable the demo model.</p>
+              <p className="muted">{L('No chat-capable models found — go back and re-scan, or enable the demo model.')}</p>
             ) : (
               <div className="kv">
                 {(['chat', 'coding'] as const).map((role) => (
                   <label key={role} className="field">
-                    <span>{role} model</span>
+                    <span>{L(`${role} model`)}</span>
                     <select
                       value={s.roles.find((r) => r.role === role)?.modelId ?? chatModels[0]?.id ?? ''}
                       onChange={(e) => void s.setRole(role, e.target.value)}
@@ -124,7 +125,7 @@ export function FirstRunWizard(): ReactElement {
               </div>
             )}
             <p className="small muted">
-              Vision and voice are optional and detected later on the health screen — nothing is promised that your models can't do.
+              {L("Vision and voice are optional and detected later on the health screen — nothing is promised that your models can't do.")}
             </p>
           </>
         )}
@@ -146,7 +147,7 @@ export function FirstRunWizard(): ReactElement {
                 </label>
               ))}
             </div>
-            <p className="small muted">You can grant folders under Settings → Tools and at every confirmation dialog.</p>
+            <p className="small muted">{L('You can grant folders under Settings → Tools and at every confirmation dialog.')}</p>
           </>
         )}
 
@@ -167,7 +168,7 @@ export function FirstRunWizard(): ReactElement {
                 </label>
               ))}
             </div>
-            <p className="small muted">Auto-switching stays enabled: the app steps down under pressure regardless.</p>
+            <p className="small muted">{L('Auto-switching stays enabled: the app steps down under pressure regardless.')}</p>
           </>
         )}
 

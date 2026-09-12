@@ -17,6 +17,39 @@ describe('German UI layer (§47 language)', () => {
     expect(tr('en', 'Settings')).toBe('Settings');
     expect(tr('de', 'totally unknown string')).toBe('totally unknown string'); // graceful fallback
   });
+
+  it('every string the first-run wizard shows is translated (boot screenshot regression)', () => {
+    // These exact keys are the L() calls in FirstRunWizard/ChatPanel first screen;
+    // a missing dictionary entry would silently fall back to English.
+    const wizardKeys = [
+      'Welcome — everything stays on this machine',
+      'Local Personal AI runs with a runtime model you choose (Ollama or any local OpenAI-compatible server). Data lives in:',
+      'No cloud account, no telemetry.',
+      'File access starts empty — you grant folders explicitly.',
+      'You can change all of this in Settings later.',
+      'No provider detected.',
+      'Install/start Ollama (ollama.com) and pull a model like',
+      'use demo model for now',
+      'Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.',
+      'No chat-capable models found — go back and re-scan, or enable the demo model.',
+      'chat model',
+      'coding model',
+      "Vision and voice are optional and detected later on the health screen — nothing is promised that your models can't do.",
+      'You can grant folders under Settings → Tools and at every confirmation dialog.',
+      'Auto-switching stays enabled: the app steps down under pressure regardless.',
+      'Re-scan',
+      'Continue →',
+      'Back',
+      'Local model provider',
+      'Runtime model selection',
+      'Permissions',
+      'Performance profile',
+      'Local-first · your model · your machine',
+      'What should we do?',
+    ];
+    const untranslated = wizardKeys.filter((k) => tr('de', k) === k);
+    expect(untranslated).toEqual([]);
+  });
 });
 
 describe('startup behaviour config (§47)', () => {

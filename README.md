@@ -154,12 +154,13 @@ model (`ollama pull llava` or `qwen2.5-vl`), then the 🎬 button on a screen re
 
 Three checks, none of them mock anything:
 
-1. **Boot smoke** — `set LPAI_SMOKE=1` (PowerShell: `$env:LPAI_SMOKE='1'`) then run the app
-   (`npm run dev`, or the portable `.exe`). The main process creates the window, waits for the
-   renderer to load, performs a real `app.info` IPC round-trip through the preload bridge against
-   the booted core (SQLite open), writes `%APPDATA%\lpai\smoke-result.txt` with `SMOKE_OK` and
-   exits 0 — or exits 1 with the failure reason. This is the one-command answer to "does Electron
-   actually start here".
+1. **Boot smoke** — one command: `npm run smoke` (builds, launches, verifies, exits). The main
+   process creates the window, waits for the renderer to load, performs a real `app.info` IPC
+   round-trip through the preload bridge against the booted core (SQLite open), saves a window
+   screenshot, writes `%APPDATA%\lpai\smoke-result.txt` with `SMOKE_OK` and exits 0 — or exits 1
+   with the failure reason. Already verified end-to-end here under a headless Linux X (`SMOKE_OK`,
+   411 ms, screenshot of the German first-run wizard on file); on Windows it additionally proves
+   the native-ABI binding load and tray/autostart registration.
 2. **Real provider test** — with Ollama running and any chat model installed:
    ```powershell
    $env:LPAI_OLLAMA_URL='http://127.0.0.1:11434'; $env:LPAI_OLLAMA_MODEL='qwen2.5:0.5b'

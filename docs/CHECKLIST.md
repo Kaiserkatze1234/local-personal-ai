@@ -88,9 +88,11 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   `predev` must fetch `better-sqlite3-v*-electron-v145-win32-x64.tar.gz` (verify the sha matches the
   app's load, no AV/proxy surprises), window reopens at its last position across restarts and after
   moving between differently scaled monitors (off-screen guard), and boot problems show the error
-  dialog with the actual reason. Fastest objective check: `$env:LPAI_SMOKE='1'; npm run dev` →
-  expect `SMOKE_OK` + exit 0 (`%APPDATA%\lpai\smoke-result.txt`). The renderer/IPC boot chain beyond
-  `app.info` (all panes, tray, overlay) stays visual.
+  dialog with the actual reason. The app stack itself (window → renderer → preload → IPC → SQLite)
+  is boot-verified headless on Linux with the screenshot showing the rendered UI — so on Windows,
+  `npm run smoke` should return `SMOKE_OK` + a `smoke-window.png` in minutes; what remains
+  Windows-specific is only what the smoke exit code cannot see (tray, overlay click-through, DPI,
+  autostart registration).
 - [ ] **[hw] Level 4 on the target box:** with Ollama installed on the RTX 3070, run
   `tests/ollama-live.test.ts` (README "Verify a real install") and `npm run bench` — expect real
   tok/s/TTFT on GPU and unload numbers reflecting VRAM, then review `release` artifacts from

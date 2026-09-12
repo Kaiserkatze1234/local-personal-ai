@@ -160,11 +160,12 @@ export function ChatPanel(): ReactElement {
           <div className="empty-chat">
             <h1>{L('What should we do?')}</h1>
             <div>
-              <span className="muted">Local-first · your model · your machine</span>
+              <span className="muted">{L('Local-first · your model · your machine')}</span>
             </div>
             <div className="hint">
-              Ask normally — "mach das schneller", "guck mal warum das nicht geht". Pick Agent or Coding mode for tool work; the AI plans,
-              uses approved tools, and verifies what it changed.
+              {L(
+                'Ask normally — "mach das schneller", "guck mal warum das nicht geht". Pick Agent or Coding mode for tool work; the AI plans, uses approved tools, and verifies what it changed.',
+              )}
             </div>
           </div>
         ) : (

@@ -49,6 +49,28 @@ export const DE: Record<string, string> = {
   dangerous: 'gefährlich',
   // wizard
   'Welcome — everything stays on this machine': 'Willkommen — alles bleibt auf diesem Rechner',
+  'No provider detected.': 'Kein Anbieter erkannt.',
+  'Install/start Ollama (ollama.com) and pull a model like': 'Ollama installieren/starten (ollama.com) und ein Modell laden wie',
+  'for coding work, then click Re-scan. You can continue with the built-in demo model to explore the UI — it is explicitly labeled and not a real reasoning model.':
+    'für Programmier-Arbeit, dann „Erneut scannen“ klicken. Du kannst mit dem eingebauten Demo-Modell weitermachen, um die UI zu erkunden — es ist eindeutig beschriftet und kein echtes Schlussfolgerungs-Modell.',
+  'use demo model for now': 'vorläufig Demo-Modell verwenden',
+  'Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.':
+    'Das Demo-Modell wird allen Rollen zugewiesen. Wechsel jederzeit in Einstellungen → KI; das ist keine endgültige Wahl.',
+  'No chat-capable models found — go back and re-scan, or enable the demo model.':
+    'Keine Chat-fähigen Modelle gefunden — zurück und erneut scannen, oder das Demo-Modell aktivieren.',
+  'chat model': 'Chat-Modell',
+  'coding model': 'Coding-Modell',
+  "Vision and voice are optional and detected later on the health screen — nothing is promised that your models can't do.":
+    'Vision und Sprache sind optional und werden später auf dem Gesundheits-Screen erkannt — es wird nichts versprochen, das deine Modelle nicht können.',
+  'You can grant folders under Settings → Tools and at every confirmation dialog.':
+    'Ordner kannst du in Einstellungen → Tools und bei jedem Bestätigungs-Dialog freigeben.',
+  'Auto-switching stays enabled: the app steps down under pressure regardless.':
+    'Automatisches Umschalten bleibt aktiv: Die App reduziert bei Druck unabhängig die Last.',
+  'Local Personal AI runs with a runtime model you choose (Ollama or any local OpenAI-compatible server). Data lives in:':
+    'Local Personal AI läuft mit einem Laufzeit-Modell deiner Wahl (Ollama oder ein lokaler OpenAI-kompatibler Server). Daten liegen in:',
+  'Local-first · your model · your machine': 'Lokal zuerst · dein Modell · dein Rechner',
+  'Ask normally — "mach das schneller", "guck mal warum das nicht geht". Pick Agent or Coding mode for tool work; the AI plans, uses approved tools, and verifies what it changed.':
+    'Frag einfach normal — „mach das schneller“, „guck mal warum das nicht geht“. Für Tool-Arbeit Agent- oder Coding-Modus wählen; die KI plant, nutzt freigegebene Tools und prüft, was sie geändert hat.',
   'No cloud account, no telemetry.': 'Kein Cloud-Konto, keine Telemetrie.',
   'File access starts empty — you grant folders explicitly.': 'Dateizugriff startet leer — Ordner wirst du explizit freigeben.',
   'You can change all of this in Settings later.': 'All das kannst du später in den Einstellungen ändern.',

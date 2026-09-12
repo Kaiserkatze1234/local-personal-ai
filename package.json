@@ -19,6 +19,7 @@
     "dev:electron": "wait-port 5173 && cross-env LPAI_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build": "node scripts/build.mjs && vite build",
     "bench": "node scripts/bench.mjs",
+    "smoke": "npm run build && cross-env LPAI_SMOKE=1 electron .",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
