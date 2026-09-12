@@ -1,11 +1,15 @@
 /**
  * LEVEL 4 — real provider/model tests (testing philosophy, spec §44). These
  * run the PRODUCTION OllamaAdapter against a real ollama server with real
- * models. They only run when LPAI_OLLAMA_URL is set (opt-in), so the normal
- * suite never depends on a local service. On the Windows target box:
+ * models. Activation (deterministic, see tests at the bottom for the rules):
  *
- *   $env:LPAI_OLLAMA_URL='http://127.0.0.1:11434'
+ *   $env:LPAI_LIVE_OLLAMA='1'          # the documented live-suite flag
  *   npx vitest run tests/ollama-live.test.ts
+ *
+ * Endpoint defaults to http://127.0.0.1:11434 (same as app auto-discovery);
+ * LPAI_OLLAMA_URL overrides it and — for backward compatibility with the
+ * established flow — also activates on its own. LPAI_LIVE_OLLAMA=0/false/off
+ * force-disables everything. Normal `npm test` stays green without Ollama.
  *
  * Chat and embedding models are DISCOVERED and capability-gated here —
  * preferring qwen3:4b, else the first chat-capable model; embedding tests use
@@ -19,11 +23,17 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { OllamaAdapter } from '../src/main/providers/adapters/ollama.js';
+import { DEFAULT_OLLAMA_URL, ollamaLiveActivation } from '../src/shared/ollamaLiveEnv.js';
 
-const BASE = process.env.LPAI_OLLAMA_URL;
+const ACTIVATION = ollamaLiveActivation(process.env);
+const BASE = ACTIVATION.baseUrl;
 const wantModel = process.env.LPAI_OLLAMA_MODEL;
 const wantEmbed = process.env.LPAI_OLLAMA_EMBED_MODEL;
-const live = BASE ? describe : describe.skip;
+const live = ACTIVATION.on ? describe : describe.skip;
+
+if (!ACTIVATION.on && process.argv.join(' ').includes('ollama-live')) {
+  console.log(`[live] suite SKIPPED — ${ACTIVATION.why}`);
+}
 
 async function ps(adapter: OllamaAdapter): Promise<{ name: string }[]> {
   const r = await fetch(`${adapter.baseUrl}/api/ps`);
@@ -248,5 +258,40 @@ live('real Ollama provider (§6/§7/§56)', () => {
     }
     // the small explicit test context must actually appear on the wire, repeatedly
     expect(gen.filter((b) => b.options?.num_ctx === TEST_NUM_CTX).length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+/**
+ * Activation rules — run in EVERY normal `npm test` (outside the live gate),
+ * so the silent "9 skipped although the live env was set" class of failure
+ * can never return unnoticed.
+ */
+describe('live-suite activation (regression)', () => {
+  const T = ollamaLiveActivation;
+  it('stays OFF by default — plain npm test must not need Ollama', () => {
+    expect(T({}).on).toBe(false);
+  });
+  it('LPAI_LIVE_OLLAMA=1 activates with the default local endpoint (the Windows-box flow)', () => {
+    const r = T({ LPAI_LIVE_OLLAMA: '1' });
+    expect(r.on).toBe(true);
+    expect(r.baseUrl).toBe(DEFAULT_OLLAMA_URL);
+  });
+  it('LPAI_OLLAMA_URL alone still activates and sets the endpoint (established flow)', () => {
+    const r = T({ LPAI_OLLAMA_URL: 'http://10.0.0.5:11434' });
+    expect(r.on).toBe(true);
+    expect(r.baseUrl).toBe('http://10.0.0.5:11434');
+  });
+  it('flag + URL compose: flag enables, URL overrides endpoint — no competing semantics', () => {
+    const r = T({ LPAI_LIVE_OLLAMA: 'true', LPAI_OLLAMA_URL: 'http://127.0.0.1:19999' });
+    expect(r.on).toBe(true);
+    expect(r.baseUrl).toBe('http://127.0.0.1:19999');
+  });
+  it('explicit 0/false/off force-disables and wins over a stray URL (deterministic kill switch)', () => {
+    for (const off of ['0', 'false', 'off']) {
+      expect(T({ LPAI_LIVE_OLLAMA: off, LPAI_OLLAMA_URL: 'http://x:1' }).on, off).toBe(false);
+    }
+  });
+  it('empty-string flag counts as unset (Windows $env:X="" semantics)', () => {
+    expect(T({ LPAI_LIVE_OLLAMA: '' }).on).toBe(false);
   });
 });

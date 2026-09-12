@@ -172,7 +172,7 @@ Three checks, none of them mock anything:
    the native-ABI binding load and tray/autostart registration.
 2. **Real provider test** — with Ollama running and any chat model installed:
    ```powershell
-   $env:LPAI_OLLAMA_URL='http://127.0.0.1:11434'   # chat + embed models auto-selected (capability-gated); pin with LPAI_OLLAMA_MODEL / LPAI_OLLAMA_EMBED_MODEL if you want
+   $env:LPAI_LIVE_OLLAMA='1'   # activates; endpoint defaults to http://127.0.0.1:11434 (override: LPAI_OLLAMA_URL, which also still activates). Chat + embed models auto-selected (capability-gated); pin with LPAI_OLLAMA_MODEL / LPAI_OLLAMA_EMBED_MODEL. LPAI_LIVE_OLLAMA=0 force-skips.
    npx vitest run tests/ollama-live.test.ts
    ```
    This exercises the production adapter against the real server: health, discovery, genuine

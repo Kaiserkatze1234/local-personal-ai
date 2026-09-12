@@ -302,6 +302,24 @@ Verified: `npm test` 111+9 (default) · with ffmpeg+`LPAI_OLLAMA_URL` everything
 0 skips** · live suite 9/9 both unpinned (auto-select) and pinned, plus the loud-fail check that
 pinning an embed model is rejected with the valid candidate list.
 
+## Twelfth pass — live-suite activation flag (silent-skip fixed)
+
+Windows box reported `npx vitest run tests/ollama-live.test.ts` => 9 skipped, 0 executed while
+`LPAI_LIVE_OLLAMA=1` was set: the old gate was `BASE = process.env.LPAI_OLLAMA_URL` (truthiness of
+the ENDPOINT variable) — a missing URL silently meant "skip", and no amount of live-env intent
+activated it. New canonical flag: **`LPAI_LIVE_OLLAMA`** (any value except 0/false/off enables;
+endpoint defaults to the app's own auto-discovery URL, `LPAI_OLLAMA_URL` optionally overrides and
+— for back-compat — still activates on its own; explicit 0/false/off force-disables over a stray
+URL). Logic lives in ONE exported pure function (`ollamaLiveActivation`) with 6 always-on unit
+tests pinning every precedence case, so a future gate change that silently skips can't slip by;
+when the file is run directly and stays off, it now also prints the exact fix hint. Nothing else
+about the suite changed: model selection (pin -> qwen3:4b preference -> first chat-capable,
+never embedding-only), TEST_NUM_CTX=2048, wire captures, cancellation, unload, embeddings and the
+payload invariant all preserved verbatim (verified: 15/15 — 9 live + 6 activation — against real
+ollama 0.34.0 with only the flag set and OLLAMA_CONTEXT_LENGTH=8192). Note: `LPAI_OLLAMA_CONTEXT_LENGTH`
+set on the box is not a project variable (client knob = config ai.runtimeContextTokens; server
+knob = OLLAMA_CONTEXT_LENGTH) and is ignored by design.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing
