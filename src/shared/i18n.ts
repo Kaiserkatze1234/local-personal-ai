@@ -55,6 +55,9 @@ export const DE: Record<string, string> = {
   'use demo model for now': 'vorläufig Demo-Modell verwenden',
   'Demo model will be bound to all roles. Swap any time in Settings → AI; this is not a permanent choice.':
     'Das Demo-Modell wird allen Rollen zugewiesen. Wechsel jederzeit in Einstellungen → KI; das ist keine endgültige Wahl.',
+  'runtime context (tokens)': 'Laufzeit-Kontext (Tokens)',
+  'runtime context = KV-cache window Ollama allocates per request — kept small on purpose (never the model-advertised max, which can demand tens of GB); chat/agent context above only shape the prompt.':
+    'Laufzeit-Kontext = KV-Cache-Fenster, das Ollama pro Anfrage reserviert — bewusst klein gehalten (nie das maximal beworbene Modelllimit, das Dutzende GB verlangen kann); chat-/agent-Kontext oben formt nur den Prompt.',
   'chat model': 'Chat-Modell',
   'coding model': 'Coding-Modell',
   "Vision and voice are optional and detected later on the health screen — nothing is promised that your models can't do.":

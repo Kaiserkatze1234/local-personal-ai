@@ -24,6 +24,13 @@ export interface AppConfig {
     routingOverride: Partial<Record<ModelRole, string>>;
     /** When true, allow routing to remote endpoints the user configured. */
     allowRemoteProviders: boolean;
+    /**
+     * Runtime KV-cache window per generation request (tokens). Sent to Ollama
+     * as options.num_ctx — deliberately NOT the model's advertised maximum
+     * (some models ship a 262144 default that allocates ~35 GB of KV cache).
+     * Adapters clamp it to a hardware-sane ceiling.
+     */
+    runtimeContextTokens: number;
   };
   memory: {
     enabled: boolean;
@@ -130,6 +137,7 @@ export function defaultConfig(): AppConfig {
       temperature: 0.7,
       routingOverride: {},
       allowRemoteProviders: false,
+      runtimeContextTokens: 4096,
     },
     memory: {
       enabled: true,

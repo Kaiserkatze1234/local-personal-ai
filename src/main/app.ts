@@ -171,7 +171,12 @@ export class CoreApp {
 
     this.providers = new ProviderRegistry(this.store, sub('providers'));
     if (opts.adapters !== 'mock-only') {
-      this.providers.register(new OllamaAdapter(), { kind: 'ollama', baseUrl: 'http://127.0.0.1:11434' });
+      // Live config getter → changing ai.runtimeContextTokens in Settings takes
+      // effect on the next request without re-registering the adapter (§6).
+      this.providers.register(new OllamaAdapter({ context: { defaultTokens: () => this.config.get().ai.runtimeContextTokens } }), {
+        kind: 'ollama',
+        baseUrl: 'http://127.0.0.1:11434',
+      });
       const remoteUrl = process.env.LPAI_OPENAI_BASE_URL;
       if (remoteUrl)
         this.providers.register(

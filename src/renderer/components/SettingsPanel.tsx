@@ -117,7 +117,21 @@ export function SettingsPanel(): ReactElement {
                 onChange={(e) => patch({ ai: { agentContextTokenBudget: Number(e.target.value) } })}
               />
             </Field>
+            <Field label={L('runtime context (tokens)')}>
+              <input
+                type="number"
+                min={512}
+                step={512}
+                value={cfg.ai.runtimeContextTokens}
+                onChange={(e) => patch({ ai: { runtimeContextTokens: Number(e.target.value) } })}
+              />
+            </Field>
           </div>
+          <p className="small muted">
+            {L(
+              'runtime context = KV-cache window Ollama allocates per request — kept small on purpose (never the model-advertised max, which can demand tens of GB); chat/agent context above only shape the prompt.',
+            )}
+          </p>
         </div>
 
         <div className="card">

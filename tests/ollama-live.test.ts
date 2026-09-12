@@ -24,8 +24,49 @@ async function ps(adapter: OllamaAdapter): Promise<{ name: string }[]> {
   return j.models ?? [];
 }
 
+/** small deterministic runtime context for the tests — never the model max */
+const TEST_NUM_CTX = 2048;
+
 live('real Ollama provider (§6/§7/§56)', () => {
-  const adapter = new OllamaAdapter({ baseUrl: BASE });
+  // every /api/chat body the adapter sends to the REAL server is captured so we
+  // can assert the exact options.num_ctx — a model advertising 262144 must never
+  // translate into a 262144-token request (real Windows failure: ~35.4 GB KV).
+  const chatBodies: { options?: { num_ctx?: number }; model?: string }[] = [];
+  const adapter = new OllamaAdapter({
+    baseUrl: BASE,
+    fetchImpl: async (u, i) => {
+      if (String(u).includes('/api/chat') && i?.body) {
+        chatBodies.push(JSON.parse(String(i.body)) as { options?: { num_ctx?: number }; model?: string });
+      }
+      return fetch(u as Parameters<typeof fetch>[0], i);
+    },
+  });
+
+  it('every /api/chat request carries an explicit, bounded num_ctx (context bug regression)', async () => {
+    const modelName = wantModel ?? (await adapter.discoverModels()).find((m) => m.capabilities.includes('text_generation'))!.name;
+    await adapter.chat.generate({
+      modelId: `ollama:${modelName}`,
+      messages: [{ role: 'user', content: 'Say: ctx' }],
+      maxTokens: 8,
+      contextTokens: TEST_NUM_CTX,
+    } as never);
+    expect(chatBodies.length).toBeGreaterThan(0);
+    const sent = chatBodies.at(-1)!.options?.num_ctx;
+    console.log(`[live] exact num_ctx sent to ${modelName}: ${sent}`);
+    expect(sent).toBe(TEST_NUM_CTX); // explicit small context -> honored (beats OLLAMA_CONTEXT_LENGTH env too)
+    // the DEFAULT (no contextTokens) is never the advertised maximum either —
+    // advertised = the true /api/show model max (e.g. qwen3:4b reports 262144)
+    const advertised = await adapter.refineContext(modelName);
+    await adapter.chat.generate({
+      modelId: `ollama:${modelName}`,
+      messages: [{ role: 'user', content: 'Say: ctx2' }],
+      maxTokens: 8,
+    } as never);
+    const def = chatBodies.at(-1)!.options!.num_ctx!;
+    expect(def).toBeGreaterThan(0); // ALWAYS sent, never missing (undefined vanished in JSON.stringify before)
+    if (advertised > def) expect(def).not.toBe(advertised); // big-context models must land on the bounded default
+    console.log(`[live] default-path num_ctx: ${def} (model-advertised max: ${advertised}, informational only)`);
+  }, 180_000);
 
   it('health check reports reachable with real model count and latency', async () => {
     const h = await adapter.healthCheck();
@@ -48,6 +89,7 @@ live('real Ollama provider (§6/§7/§56)', () => {
       modelId: `ollama:${wantModel ?? 'x'}`,
       messages: [{ role: 'user', content: 'Reply with exactly: LPONAMA-OK and nothing else.' }],
       maxTokens: 64,
+      contextTokens: TEST_NUM_CTX,
     } as never);
     expect(res.text.toLowerCase()).toContain('lponama-ok');
     expect(res.usage?.outputTokens).toBeGreaterThan(0); // eval_count from the actual run
@@ -60,6 +102,7 @@ live('real Ollama provider (§6/§7/§56)', () => {
       modelId: `ollama:${wantModel ?? 'x'}`,
       messages: [{ role: 'user', content: 'Count from 1 to 12, one number per line, nothing else.' }],
       maxTokens: 96,
+      contextTokens: TEST_NUM_CTX,
     } as never)) {
       if (c.textDelta) chunks.push(c.textDelta);
     }
@@ -77,6 +120,7 @@ live('real Ollama provider (§6/§7/§56)', () => {
         modelId: `ollama:${wantModel ?? 'x'}`,
         messages: [{ role: 'user', content: 'Write a very long story about everything, at least 500 words.' }],
         maxTokens: 2048,
+        contextTokens: 4096, // room for the long story until abort lands mid-flight
         signal: ctrl.signal,
       } as never)) {
         if (c.textDelta && ++chunks === 2) ctrl.abort();
@@ -94,6 +138,7 @@ live('real Ollama provider (§6/§7/§56)', () => {
       modelId: `ollama:${wantModel ?? 'x'}`,
       messages: [{ role: 'user', content: 'Say: loaded' }],
       maxTokens: 8,
+      contextTokens: TEST_NUM_CTX,
     } as never);
     let loaded = await ps(adapter);
     expect(loaded.length).toBeGreaterThanOrEqual(1);

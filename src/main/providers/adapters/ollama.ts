@@ -2,6 +2,7 @@
  * Ollama adapter — an adapter, never the core (spec §6, RULE 8).
  * Talks to the local Ollama HTTP API via fetch; no SDK dependency.
  */
+import { totalmem } from 'node:os';
 
 import type { ModelCapability } from '../../../shared/types/capabilities.js';
 import { nowIso } from '../../../shared/types/common.js';
@@ -22,6 +23,33 @@ export interface OllamaAdapterOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * Runtime context window policy (tokens). Advertise-max from model metadata
+   * is NEVER used as a request default — qwen3-class models ship 262144 as
+   * their Modelfile default, which makes Ollama allocate tens of GB of KV
+   * cache on a laptop. defaultTokens may be a live getter (config-backed);
+   * maxTokens is the hardware-sane clamp (defaults per installed RAM).
+   */
+  context?: { defaultTokens?: number | (() => number); maxTokens?: number | (() => number) };
+}
+
+/** Context sizes below this are useless for tool loops; above the clamp, dangerous. */
+export const MIN_NUM_CTX = 512;
+
+/** Coarse hardware ceiling for the runtime context based on installed RAM. */
+export function hardwareContextCeiling(totalMemBytes = totalmem()): number {
+  const gb = totalMemBytes > 0 ? totalMemBytes / 1024 ** 3 : 0;
+  if (gb <= 0 || !Number.isFinite(gb)) return 8192; // unknown environment -> conservative
+  if (gb < 8) return 4096;
+  if (gb < 12) return 8192;
+  if (gb < 24) return 16384; // a 16 GB laptop must not stream a 262k KV cache
+  return 32768;
+}
+
+function readLive(v: number | (() => number) | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  const n = typeof v === 'function' ? v() : v;
+  return Number.isFinite(n) ? n : undefined;
 }
 
 interface OllamaTagModel {
@@ -62,6 +90,7 @@ export class OllamaAdapter implements ModelProviderAdapter {
   readonly baseUrl: string;
   private fetch: typeof fetch;
   private timeoutMs: number;
+  private contextOpts: OllamaAdapterOptions['context'];
   private contextCache = new Map<string, number>();
 
   constructor(opts: OllamaAdapterOptions = {}) {
@@ -69,6 +98,18 @@ export class OllamaAdapter implements ModelProviderAdapter {
     this.baseUrl = (opts.baseUrl ?? 'http://127.0.0.1:11434').replace(/\/$/, '');
     this.fetch = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = opts.timeoutMs ?? 8000;
+    this.contextOpts = opts.context;
+  }
+
+  /**
+   * The one place num_ctx is decided: explicit per-request value wins over the
+   * config default (4096 when unset); both are clamped into [MIN_NUM_CTX,
+   * hardware ceiling]. Never derived from the model's advertised maximum.
+   */
+  private resolveNumCtx(req: GenerationRequest): number {
+    const requested = req.contextTokens ?? readLive(this.contextOpts?.defaultTokens) ?? 4096;
+    const ceiling = readLive(this.contextOpts?.maxTokens) ?? hardwareContextCeiling();
+    return Math.max(MIN_NUM_CTX, Math.min(Math.floor(requested), Math.max(MIN_NUM_CTX, Math.floor(ceiling))));
   }
 
   private async request(pathname: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
@@ -145,15 +186,27 @@ export class OllamaAdapter implements ModelProviderAdapter {
     try {
       const res = await this.request('/api/show', { method: 'POST', body: JSON.stringify({ name: modelName }) });
       if (res.ok) {
-        const j = (await res.json()) as {
-          model_info?: Record<string, { 'general.architecture.num_ctx'?: number; [k: string]: unknown }>;
-          parameters?: Record<string, number>;
-        };
-        const arch = Object.values(j.model_info ?? {})[0] ?? {};
-        const numCtx = (arch as Record<string, number>)['llama.context_length'] ?? (arch as Record<string, number>)['num_ctx'];
-        const n = typeof numCtx === 'number' && numCtx > 0 ? numCtx : 4096;
-        this.contextCache.set(modelName, n);
-        return n;
+        const j = (await res.json()) as { model_info?: Record<string, unknown> };
+        // /api/show shapes differ across Ollama versions: current = FLAT dict with
+        // family-prefixed keys ('qwen2.context_length'); older = nested one level
+        // ({ llama: { 'llama.context_length': … } }). Search both, in order.
+        const info = j.model_info ?? {};
+        const flat = Object.entries(info).find(([k, v]) => k.endsWith('context_length') && typeof v === 'number' && v > 0);
+        let n = typeof flat?.[1] === 'number' ? flat[1] : undefined;
+        if (n === undefined) {
+          for (const v of Object.values(info)) {
+            if (v && typeof v === 'object') {
+              const nested = Object.entries(v as Record<string, unknown>).find(([k]) => k.endsWith('context_length'));
+              if (nested && typeof nested[1] === 'number' && nested[1] > 0) {
+                n = nested[1];
+                break;
+              }
+            }
+          }
+        }
+        const resolved = n ?? 4096;
+        this.contextCache.set(modelName, resolved);
+        return resolved;
       }
     } catch {
       /* keep default */
@@ -188,9 +241,15 @@ export class OllamaAdapter implements ModelProviderAdapter {
         model,
         messages: this.toOllamaMessages(req),
         stream: false,
+        // num_ctx is ALWAYS explicit — an omitted value lets Ollama fall back
+        // to the model's advertised maximum (e.g. 262144 → ~35 GB KV on a
+        // laptop). undefined here previously vanished in JSON.stringify.
         options: {
           temperature: req.temperature,
-          num_ctx: undefined,
+          num_ctx: this.resolveNumCtx(req),
+          // maxTokens is only a promise if it reaches the server (same bug class
+          // as num_ctx: an omitted/undefined option silently means "unbounded")
+          ...(req.maxTokens && req.maxTokens > 0 ? { num_predict: Math.floor(req.maxTokens) } : {}),
         },
       };
       if (req.keepAliveSec !== undefined) body.keep_alive = req.keepAliveSec;
@@ -227,7 +286,13 @@ export class OllamaAdapter implements ModelProviderAdapter {
         model,
         messages: this.toOllamaMessages(req),
         stream: true,
-        options: { temperature: req.temperature },
+        // same guarantees as generate: bounded context AND bounded length —
+        // a streamed story must not loop past its window forever
+        options: {
+          temperature: req.temperature,
+          num_ctx: this.resolveNumCtx(req),
+          ...(req.maxTokens && req.maxTokens > 0 ? { num_predict: Math.floor(req.maxTokens) } : {}),
+        },
       };
       if (req.keepAliveSec !== undefined) body.keep_alive = req.keepAliveSec;
       const res = await this.request('/api/chat', { method: 'POST', body: JSON.stringify(body), signal: req.signal }, 600_000);

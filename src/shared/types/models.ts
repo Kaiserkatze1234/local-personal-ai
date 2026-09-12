@@ -71,6 +71,14 @@ export interface GenerationRequest {
   signal?: AbortSignal;
   /** Ollama-style: keep model loaded this many seconds (0 = unload after). */
   keepAliveSec?: number;
+  /**
+   * Runtime context window (tokens) for THIS request — provider-neutral name.
+   * Adapters MUST apply a small safe default when unset (never the model's
+   * advertised maximum: a 262k-context model allocating 262k tokens of KV
+   * cache melts any laptop). Model metadata's contextLength stays purely
+   * informational.
+   */
+  contextTokens?: number;
 }
 
 export interface GenerationUsage {
