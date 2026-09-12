@@ -203,8 +203,9 @@ Result: `SMOKE_OK ... renderer+ipc ok: app.info (411ms)` with SQLite booted, plu
 also saves `smoke-window.png` via `capturePage` — the first actual visual proof of the rendered UI.
 That screenshot exposed a real German-first flaw: the first-run wizard's body paragraphs were
 unwrapped raw English (only headings/bullets had `L()`). All wizard + first-screen chat strings are
-now translated, and a dictionary-coverage test (`fourth-pass.test.ts`) fails if any visible key ever
-falls back to English. `npm run smoke` added as the one-command boot check everywhere (it is what
+now translated — 10 new dictionary entries plus 4 that already existed but had never been wrapped in
+`L()` (deduplicated; the pre-existing wording won) — and a dictionary-coverage test
+(`fourth-pass.test.ts`) fails if any visible key ever falls back to English. `npm run smoke` added as the one-command boot check everywhere (it is what
 closes the Windows "does it start" item in §B in 20 seconds). Electron window-manager behavior
 (tray, click-through overlay, DPI) still needs the Windows box; the *app stack* itself is now
 boot-verified, not claimed.
