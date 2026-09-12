@@ -141,6 +141,15 @@ you can paste into an issue. `-- --demo` runs the same harness against the built
 useful to confirm the tooling works, meaningless for hardware conclusions. Tune with
 `-- --turns=5 --prompt="..."`.
 
+### Runtime context window (the KV-cache setting that matters on 16 GB / 8 GB VRAM)
+
+Every generation request sends an **explicit `num_ctx`** to Ollama — default **4096** tokens,
+adjustable under Settings → AI (`runtime context (tokens)`). It is deliberately never the model's
+advertised maximum: some models (qwen3-class) ship a 262144-token default that makes Ollama reserve
+tens of GB of KV cache and die on a laptop. The value is additionally clamped to a ceiling derived
+from installed RAM, so a wrong setting cannot OOM the machine — bigger context = slower prompt
+processing and more VRAM; measure the effect with `npm run bench` before raising it.
+
 ### Recording analysis: what "real testing" covers
 
 `npm run test` includes `tests/recording-ffmpeg.test.ts`, which drives the §22 pipeline against

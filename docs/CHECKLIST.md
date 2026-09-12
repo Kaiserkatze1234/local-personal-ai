@@ -31,6 +31,14 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   adapter ships. Add `providers/adapters/voiceServers.ts`: whisper.cpp HTTP server
   (`GET /health`, `POST /inference` multipart → STT) and a Piper-style HTTP TTS, enabled via
   optional base-URL settings, auto-registered at boot. Testable against local stub servers.
+- [x] **[code] Eleventh pass (part 2) — Ollama runtime context fix (real Windows failure):** every
+  `/api/chat` now sends an explicit bounded `options.num_ctx` (request override > config
+  `ai.runtimeContextTokens`, default 4096, clamped to a hardware ceiling) — model-advertised
+  maxima (qwen3:4b = 262144 → ~35.4 GB KV) can never reach the request; `maxTokens` finally
+  travels as `num_predict` (the cancel-test story had looped 11 min past the window without it);
+  `refineContext` parses current flat + legacy nested `/api/show` shapes (metadata-only).
+  Regression coverage: `tests/ollama-context.test.ts` (offline, 8) + a captured-num_ctx assertion
+  in the live suite. Details in PHASE_MAP.
 - [x] **[code] Ninth pass — Level 4 validation against a real Ollama** (`tests/ollama-live.test.ts`,
   opt-in `LPAI_OLLAMA_URL`; 7/7 green against a real v0.34.0 server + `qwen2.5:0.5b` +
   `nomic-embed-text`). It caught and fixed a real cancellation bug (caller `AbortSignal` overridden
@@ -136,7 +144,11 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
 - [ ] **[polish] §18/§19 — fuller skill editor UI** (today: prompt-dialog level editing;
   review/toggle/delete exist).
 - [ ] **[polish] Settings cleanup:** `voice.sttModel`/`ttsModel` config fields coexist with
-  the `stt`/`tts` role bindings — unify to one path.
+        the `stt`/`tts` role bindings — unify to one path.
+- [ ] **[polish] `keepAliveSec` is a request-contract field used only by the explicit unload
+        path (keep_alive 0); normal requests let Ollama's server default govern residency, and
+        §56 idle unload is the intended control. If finer per-model pinning is ever wanted, wire
+        the field at the router — nothing else needs to change.
 
 ## Not gaps (verified recently, listed so they don't get re-audited)
 

@@ -210,6 +210,39 @@ closes the Windows "does it start" item in §B in 20 seconds). Electron window-m
 (tray, click-through overlay, DPI) still needs the Windows box; the *app stack* itself is now
 boot-verified, not claimed.
 
+## Eleventh pass (part 2) — Ollama runtime context bug (real Windows failure)
+
+Reported on the target machine: `qwen3:4b` advertises 262144 context; OLLAMA_CONTEXT_LENGTH=8192
+did not help; generation attempted a ~35.4 GB KV allocation; live tests died at first generation.
+Audit (`src/main/providers/adapters/ollama.ts`) found the root cause and two cousins of the same
+class — declared-but-never-transmitted request options, silently dropped by `JSON.stringify`:
+
+1. **`options.num_ctx: undefined`** in `generate` (and ABSENT in `stream` — the path real chat
+   turns use) → Ollama fell back to the model's Modelfile default (262144 for qwen3). Fixed: a
+   single `resolveNumCtx()` decides every request — explicit `req.contextTokens` > config
+   `ai.runtimeContextTokens` (NEW setting, default **4096**, editable in Settings → AI with an
+   explanatory field) — and is clamped to `[512, hardwareContextCeiling()]` (4096/8192/16384/32768
+   by installed RAM; a 16 GB laptop can never be talked into a 35 GB KV cache by model metadata).
+   Model metadata's `contextLength` stays purely informational (router + discovery untouched).
+2. **`maxTokens` never reached the server** (no `num_predict`) → the live cancellation test's
+   "long story" looped for 11 MINUTES past the whole window (log: `context shift, n_discard=2045`,
+   request ended only when TCP died). Wired for generate+stream; unset stays absent (server
+   default), never 0.
+3. **`refineContext` read only `llama.context_length`** inside a nested `model_info` — current
+   Ollama returns a FLAT dict with family prefixes (`qwen3.context_length`). Generalized to both
+   shapes (unit-tested both). Without this the advertised max was invisible (always fell to 4096).
+
+Also noted, not a bug: `keepAliveSec` (§56 field) is honored only by the explicit unload path;
+nothing sets it on normal requests by design (idle unload covers residency). Recorded in §C.
+
+Proof (all re-run against a REAL ollama 0.34.0 + qwen2.5:0.5b with OLLAMA_CONTEXT_LENGTH=8192 set
+to mirror the Windows config): live suite 8/8 in 19 s — captured exact wire bodies show `num_ctx
+2048` (explicit test context, honored over the env default) and `num_ctx 4096` on the default path
+while the model advertises 32768 (informational) — plus a new offline regression file
+(`tests/ollama-context.test.ts`, 8 tests) proving a 262144-advertising model never receives a
+262144 request, both /api/show shapes parse, clamps hold, and the config default is a LIVE getter
+(Settings change applies next request, no re-registration).
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing
