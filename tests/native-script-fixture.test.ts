@@ -18,18 +18,6 @@ import { dirname, join, resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const REPO_SCRIPTS = resolve('scripts');
-// platform-magic payload that passes magicOk() for the CURRENT platform
-function fakeBinding(marker: string): Buffer {
-  const head =
-    process.platform === 'win32'
-      ? Buffer.from([0x4d, 0x5a]) // MZ
-      : process.platform === 'linux'
-        ? Buffer.from([0x7f, 0x45, 0x4c, 0x46]) // \x7fELF
-        : Buffer.from([0xca, 0xfe]);
-  const body = Buffer.from(`${marker} `.repeat(12_000)); // > 100_000 bytes
-  return Buffer.concat([head, Buffer.alloc(0), body.slice(0, Math.max(0, 110_000 - body.length)), body]);
-}
-
 let root: string;
 let pkgBin: string;
 let cacheBin: string;
