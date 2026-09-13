@@ -427,6 +427,40 @@ clean and *starts* the electron binary (sandbox dies at missing system libs, an 
 ceiling — on Windows the same spawn opens the window). predev not disabled, better-sqlite3 kept,
 no runtime code touched. Default suite 144 passed + 10 opt-in skips (154, 23 files).
 
+## Seventeenth pass — Windows dev run: three independent failures, three real root causes
+
+1) `[native] win32-x64: FAILED — no prebuilt for electron-v4171 ...`: NOT actually a missing
+   prebuilt (better-sqlite3 12.11.1 publishes electron-ABI-145 win32-x64, which is what Electron
+   41.7.1 maps to per node-abi). fetchPrebuilt threw away prebuild-install's real stderr and the
+   `--quiet` predev surfaced nothing, so every fetch failure (proxy/TLS/lockfile-override/whatever)
+   got mis-reported as "no prebuilt" — a false verdict that also sent users to install a toolchain
+   they don't need. Fix: both acquisition helpers return {ok, why} with the captured error line,
+   the FAILED result embeds the reasons + copy-pasteable remediation (winget VS Build Tools +
+   Python with exact workload flags, npm approve-scripts, LPAI_SQLITE_BINDING), visible even under
+   --quiet; @electron/rebuild became an EXPLICIT devDependency (it was only a hoisted transitive of
+   electron-builder — the fragility that made "no toolchain fallback" possible at all). Electron
+   stays 41.7.1 — no downgrade; ABI verification (magic+size+real-Electron probe before caching,
+   byte-exact swap restore) untouched.
+2) `Electron failed to install correctly`: npm ≥ 11.16 warns / npm 12 BLOCKS unapproved dependency
+   install scripts; electron's dist download IS its postinstall. Repo-level supported fix: committed
+   `allowScripts` map (electron, better-sqlite3, electron-winstaller, esbuild — exactly the four
+   packages in this tree with lifecycle install scripts, name-only so bumps don't re-block), README
+   documents the `npm approve-scripts electron better-sqlite3 && npm install` repair. No error
+   suppression: the mechanism is satisfied at the package-manager-policy level.
+3) `failed to resolve rolldownOptions.input value: "src/renderer/index.html"`: vite.config root is
+   src/renderer, but the three inputs carried the src/renderer/ prefix — Vite 8/rolldown resolves
+   input strictly relative to root and failed the dep scan. Inputs are now 'index.html',
+   'overlay.html', 'region.html'; verified by full npm run build (all three HTMLs land in
+   dist/renderer) and a clean `npm run dev` (0 rolldown/scan warnings, Vite ready, dep scan runs).
+
+Tests: three new fixture cases run the REAL script — toolchain cli.js absent (graceful FAILED +
+reason + 'npm approve-scripts' guidance + zero state corruption: no cache entry, package stays
+binding-less, no backup residue), toolchain exit-1 with gyp/Python stderr (the error line is
+surfaced verbatim + guidance shown), prebuild-install failing 404 (reason propagated — no more
+silent "no prebuilt" lie). All 6 swap/fixture regression tests + full suite green; --force re-run
+against the real GitHub release: linux-x64 prebuilt fetched, verified, byte-identical to cache —
+the success path with the new {ok,why} plumbing proven on the network for real.
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

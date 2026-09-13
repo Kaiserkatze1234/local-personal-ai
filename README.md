@@ -102,6 +102,15 @@ testing and is always labeled as not real AI.
    `native/electron/` (cached, gitignored) because `npm install` builds one for Node, which the Electron
    runtime cannot load — without this step a fresh checkout crashes at startup with `NODE_MODULE_VERSION`.
    `npm test` keeps using the Node build from `node_modules`, so both loops work side by side.
+   **npm ≥ 11.16 warns about — and npm 12 blocks — unapproved dependency install scripts**, and both
+   `electron` (its postinstall downloads the dist) and `better-sqlite3` (installs the native binding)
+   depend on them. This repo pre-approves exactly `electron`, `better-sqlite3`, `electron-winstaller`
+   and `esbuild` via the committed `allowScripts` field in `package.json` — keep it. A fresh clone on
+   npm 12 would otherwise die with `Electron failed to install correctly` or a missing binding; the
+   manual repair is `npm approve-scripts electron better-sqlite3 && npm install`. If `rebuild:native`
+   says no prebuilt exists for your Electron version (better-sqlite3 publishes per ABI — Electron
+   41.7.1 = ABI 145 is covered), follow the printed one-time VS Build Tools + Python instructions;
+   the verified result is cached under `native/electron/` forever after.
 3. Installer: `npm run dist` → `release/Local Personal AI-Setup-*.exe` (x64/ARM64) or the portable `.exe`.
 4. First start walks you through provider detection, model choice, permissions and performance profile. Data lives in `%APPDATA%\lpai` — the exact same folder in dev and installed builds; window size/position is remembered there too. Delete that folder for a full reset; nothing else is written.
 

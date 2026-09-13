@@ -129,4 +129,89 @@ describe('rebuild-native.mjs survives a missing pre-rebuild Node binding (Window
     expect(r.status).toBe(0);
     expect(existsSync(pkgBin)).toBe(false);
   });
+
+  it('no prebuilt AND no toolchain: loud actionable FAILED, native state untouched (req A)', async () => {
+    const rb = join(root, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
+    const rbHeld = `${rb}.held`;
+    copyFileSync(rb, rbHeld);
+    rmSync(rb); // "@electron/rebuild not installed" — the hoisted-dep fragility Windows hit
+    try {
+      rmSync(dirname(cacheBin), { recursive: true, force: true });
+      rmSync(pkgBin, { force: true });
+      const { spawnSync } = await import('node:child_process');
+      const r = spawnSync(process.execPath, [join(root, 'scripts', 'rebuild-native.mjs'), '--force', '--quiet'], {
+        cwd: root,
+        encoding: 'utf8',
+        timeout: 120_000,
+        env: { ...process.env },
+      });
+      const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+      expect(r.status, out).toBe(0); // never crash predev
+      expect(out).toContain('FAILED');
+      expect(out).toContain('@electron/rebuild is not installed'); // real reason, not a guess
+      expect(out).toContain('npm approve-scripts'); // actionable remediation even under --quiet
+      expect(existsSync(cacheBin), 'no bogus cache entry').toBe(false);
+      expect(existsSync(pkgBin), 'package still has no binding').toBe(false);
+      expect(existsSync(join(root, 'native', '.node-backup-rebuild')), 'no backup residue').toBe(false);
+    } finally {
+      copyFileSync(rbHeld, rb);
+      rmSync(rbHeld);
+    }
+  });
+
+  it('toolchain failure surfaces the underlying gyp/Python error line (actionable, req A)', async () => {
+    const cli = join(root, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
+    const held = `${cli}.held`;
+    copyFileSync(cli, held);
+    writeFileSync(cli, 'console.error("gyp ERR! find Python - Python not found on PATH");\nprocess.exit(1);\n');
+    try {
+      rmSync(dirname(cacheBin), { recursive: true, force: true });
+      const { spawnSync } = await import('node:child_process');
+      const r = spawnSync(process.execPath, [join(root, 'scripts', 'rebuild-native.mjs'), '--force'], {
+        cwd: root,
+        encoding: 'utf8',
+        timeout: 120_000,
+        env: { ...process.env },
+      });
+      const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+      expect(out).toContain('find Python'); // the swallowed error is now REPORTED
+      expect(out).toContain('VS Build Tools');
+      expect(out).not.toMatch(/ENOENT[^\n]*copyfile|copyfile[^\n]*ENOENT/i);
+    } finally {
+      copyFileSync(held, cli);
+      rmSync(held);
+    }
+  });
+
+  it('prebuild-install failure reason is propagated (never a silent "no prebuilt" verdict)', async () => {
+    const pi = join(root, 'node_modules', 'prebuild-install');
+    mkdirSync(join(pi, 'bin-dir'), { recursive: true });
+    writeFileSync(
+      join(pi, 'bin.js'),
+      'console.error("http 404 GET https://github.com/WiseLibs/better-sqlite3/releases/download/...");\nprocess.exit(1);\n',
+    );
+    const cli = join(root, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
+    const held = `${cli}.held`;
+    copyFileSync(cli, held);
+    rmSync(cli); // force the fetch failure to be the whole story
+    try {
+      rmSync(dirname(cacheBin), { recursive: true, force: true });
+      rmSync(pkgBin, { force: true });
+      const { spawnSync } = await import('node:child_process');
+      const r = spawnSync(process.execPath, [join(root, 'scripts', 'rebuild-native.mjs'), '--force'], {
+        cwd: root,
+        encoding: 'utf8',
+        timeout: 120_000,
+        env: { ...process.env },
+      });
+      const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+      expect(out).toContain('http 404'); // actual cause visible instead of the old generic 'no prebuilt' lie
+      expect(out).toContain('FAILED');
+      expect(r.status).toBe(0);
+    } finally {
+      copyFileSync(held, cli);
+      rmSync(held);
+      rmSync(join(pi, 'bin.js'), { force: true });
+    }
+  });
 });

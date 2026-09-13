@@ -4,6 +4,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "allowScripts": {
+    "better-sqlite3": true,
+    "electron": true,
+    "electron-winstaller": true,
+    "esbuild": true
+  },
   "description": "Local-first personal AI agent for Windows (Electron + TypeScript + React). Runtime model is provider-pluggable; no hard dependency on any specific model.",
   "main": "dist/main/index.js",
   "author": "user",
@@ -38,6 +44,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@electron/rebuild": "^4.2.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.4",
     "@types/react": "^19.3.0",

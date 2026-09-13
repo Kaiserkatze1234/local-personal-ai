@@ -126,40 +126,65 @@ function stashToCache(pkgBin, dest) {
 function fetchPrebuilt(bsq, platform, arch, ev, dest) {
   const pkgBin = join(bsq, 'build', 'Release', 'better_sqlite3.node');
   const pi = join(ROOT, 'node_modules', 'prebuild-install', 'bin.js');
-  return swapWithProducedBinding({
+  if (!existsSync(pi)) return { ok: false, why: 'prebuild-install not installed (npm install issue?)' };
+  let why = '';
+  const ok = swapWithProducedBinding({
     pkgBin,
     backup: join(ROOT, 'native', `.node-backup-${platform}-${arch}`),
     produce: () => {
-      if (!existsSync(pi)) return false;
       const r = spawnSync(process.execPath, [pi, '--runtime=electron', `--target=${ev}`, '--platform', platform, '--arch', arch], {
         cwd: bsq,
-        stdio: QUIET ? 'ignore' : 'inherit',
+        encoding: 'utf8',
         timeout: 180_000,
       });
+      const noise = `${r.stderr ?? ''}\n${r.stdout ?? ''}`
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('>'))
+        .join(' ');
+      if (!QUIET && noise) say(noise.slice(0, 400));
+      if (r.error) why = `could not run prebuild-install: ${r.error.message}`;
+      else if (r.status !== 0) why = noise.slice(0, 240) || `prebuild-install exited ${String(r.status)}`;
       return r.status === 0;
     },
     stash: (bin) => stashToCache(bin, dest), // BEFORE the restore in the swap's finally
   });
+  if (ok) return { ok: true };
+  return {
+    ok: false,
+    why: why || (existsSync(pkgBin) ? 'downloaded file was identical to the existing binding' : 'no prebuilt asset matched (404)'),
+  };
 }
 
 function rebuildViaElectronRebuild(bsq, dest) {
   // current platform only, requires local toolchain — fallback when no prebuilt exists
   const bin = join(ROOT, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
-  if (!existsSync(bin)) return false;
+  if (!existsSync(bin)) return { ok: false, why: '@electron/rebuild is not installed (it is a devDependency — run npm install)' };
   const pkgBin = join(bsq, 'build', 'Release', 'better_sqlite3.node');
-  return swapWithProducedBinding({
+  let why = '';
+  const ok = swapWithProducedBinding({
     pkgBin,
     backup: join(ROOT, 'native', '.node-backup-rebuild'),
     produce: () => {
       const r = spawnSync(process.execPath, [bin, '--force', '--only', 'better-sqlite3'], {
         cwd: ROOT,
-        stdio: QUIET ? 'ignore' : 'inherit',
+        encoding: 'utf8',
         timeout: 1_800_000,
       });
+      const noise = `${r.stderr ?? ''}\n${r.stdout ?? ''}`
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && /ERR|error|gyp|python|Visual Studio|MSBuild/i.test(l))
+        .join(' | ');
+      if (!QUIET && noise) say(noise.slice(0, 600));
+      if (r.error) why = `could not run @electron/rebuild: ${r.error.message}`;
+      else if (r.status !== 0) why = noise.slice(0, 320) || `electron-rebuild exited ${String(r.status)}`;
       return r.status === 0;
     },
     stash: (b) => stashToCache(b, dest), // BEFORE the restore in the swap's finally
   });
+  if (ok) return { ok: true };
+  return { ok: false, why: why || 'rebuild produced no changed binding' };
 }
 
 /** Make the actual Electron binary load the file — definitive ABI verification. */
@@ -212,16 +237,24 @@ function ensureElectronAbi(bsq, ev, triples) {
       continue;
     }
     let ok = false;
+    const reasons = [];
     say(`fetching better-sqlite3 prebuilt for Electron ${ev} (${t})…`);
-    if (fetchPrebuilt(bsq, platform, arch, ev, dir)) ok = true;
+    const fetched = fetchPrebuilt(bsq, platform, arch, ev, dir);
+    if (fetched.ok) ok = true;
+    else reasons.push(`prebuilt fetch for electron@${ev} failed: ${fetched.why}`);
     if (!ok && t === `${process.platform}-${process.arch}`) {
-      say(`no prebuilt available for ${t} — falling back to @electron/rebuild (needs local toolchain)…`);
-      if (rebuildViaElectronRebuild(bsq, dir)) ok = true;
+      say(`prebuilt unusable — falling back to @electron/rebuild (needs local toolchain)…`);
+      const built = rebuildViaElectronRebuild(bsq, dir);
+      if (built.ok) ok = true;
+      else reasons.push(`toolchain rebuild: ${built.why}`);
     }
     if (!ok) {
       results.push(
-        `${t}: FAILED — no prebuilt for electron-v${ev.replace(/\./g, '')} on ${t} and no toolchain fallback. ` +
-          'Options: use an Electron version better-sqlite3 publishes prebuilds for, install VS Build Tools + Python, or set LPAI_SQLITE_BINDING to a manually built binding.',
+        `${t}: FAILED — Electron ${ev}. ` +
+          reasons.join(' ; ') +
+          '. Fix options: (1) install VS Build Tools + Python once (winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" and winget install Python.Python.3.12 --silent), then `npm run rebuild:native`; ' +
+          '(2) if install scripts were skipped (npm >= 11.16 blocks unapproved ones): `npm approve-scripts better-sqlite3 electron` and rerun npm install; ' +
+          '(3) LPAI_SQLITE_BINDING=/path/to/better_sqlite3.node for a manually built binding.',
       );
       continue;
     }

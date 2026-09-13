@@ -35,6 +35,12 @@ Derived from a live audit of this repo (git `0d4a6a7`, 52/52 tests, tree clean) 
   0/false/off) enables `tests/ollama-live.test.ts` with the app's default endpoint; `LPAI_OLLAMA_URL`
   remains endpoint override + legacy activation; explicit-off wins; 6 always-on activation unit
   tests pin the precedence so silent "9 skipped" can never return. Logic in `src/shared/ollamaLiveEnv.ts`.
+- [x] **[code] Seventeenth pass — Windows dev trio fixed at the root:** native fetch failures now
+  surface their REAL reason (the old 'no prebuilt' line could be a lie; @electron/rebuild is an
+  explicit devDependency again with actionable toolchain guidance even under --quiet), npm 11.16/12
+  install-script blocking is satisfied repo-level via committed `allowScripts` (electron,
+  better-sqlite3, electron-winstaller, esbuild), and vite inputs are root-relative for Vite 8/
+  rolldown (dep scan clean, 3 HTML entries build). Electron 41.7.1 retained; ABI verification intact.
 - [x] **[code] Sixteenth pass — predev ENOENT fixed structurally:** backup/restore of the native
   swap lives in `scripts/native-swap.mjs` (one rule for BOTH acquisition paths): a missing
   pre-rebuild binding no longer crashes, the package always ends exactly as it started, and a
