@@ -2,7 +2,7 @@
  * Ollama adapter — an adapter, never the core (spec §6, RULE 8).
  * Talks to the local Ollama HTTP API via fetch; no SDK dependency.
  */
-import { clampRuntimeContext, hardwareContextCeiling, MIN_NUM_CTX } from '../../../shared/util/limits.js';
+import { clampRuntimeContext, hardwareContextCeiling } from '../../../shared/util/limits.js';
 
 // re-exported for existing imports/tests; the policy lives in shared/util/limits
 export { hardwareContextCeiling, MIN_NUM_CTX } from '../../../shared/util/limits.js';
