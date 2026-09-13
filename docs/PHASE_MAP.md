@@ -397,6 +397,36 @@ captured raw JSON shapes verbatim — truncation normalization, think-guard matr
 non-thinking/show-fail -> never sent), stream separation (reasoningDelta XOR textDelta), legacy
 stream byte-identical. Default suite 136+10 (146, 21 files), lint 0/0, typecheck+build clean.
 
+## Sixteenth pass — predev ENOENT: backup step must not assume a pre-existing Node binding
+
+Real-Windows `npm run dev` died inside `predev`: `rebuildViaElectronRebuild` unconditionally
+copied `node_modules/better-sqlite3/build/Release/better_sqlite3.node` to `native\.node-backup-rebuild`
+— but that file legitimately does NOT exist when the package resolves its binding through
+`bindings`/prebuilds lookups (better-sqlite3 ≥11) or after install flows that never populate
+build/Release. The Node ABI probe passes, the fetch path declines (no prebuilt match), the fallback
+crashes on the backup line before rebuilding anything. Fix is structural, not a patch on the copy:
+the backup/restore rules now live in ONE module (`scripts/native-swap.mjs`
+`swapWithProducedBinding`) used by BOTH acquisition paths — fetch and rebuild — with the invariants
+made explicit: `had = existsSync(pkgBin)` decides backup AND restore (had → byte-for-byte restore;
+absent → the produced file is REMOVED again so the package ends exactly as it started, which also
+closes fetchPrebuilt's latent leave-an-Electron-binary-in-node_modules gap for the had=false case);
+`produce()` success requires the binding to exist afterwards and to DIFFER from the original (exit
+code alone never counts — the produced file is what gets stashed, and stash still happens BEFORE
+restore so the cache can never capture the restored Node bytes). ensureElectronAbi's existing
+magic+size+real-Electron-probe verification of the cached file is untouched and remains the
+Electron-compatibility proof. Regressions: tests/native-swap.test.ts (5 helper cases incl.
+missing-binding success + producer-claims-done-but-no-file) and tests/native-script-fixture.test.ts
+which spawns the REAL script against a self-contained fixture repo (stub better-sqlite3 JS binding,
+absent prebuild-install forcing the @electron/rebuild fallback, stub cli writing electron-magic
+bytes, missing electron dist → probe degrades to format+size by design): (1) missing binding → no
+copyfile-ENOENT, binding cached, package stays binding-less, backup file cleaned; (2) pre-existing
+binding + unchanged output → loud FAILED, original byte-identical, cache NOT poisoned; (3) failing
+fallback with missing binding → graceful actionable FAILED, never a crash. Real-environment check:
+`node scripts/rebuild-native.mjs` re-fetch + cache-hit both exit 0; `npm run dev` now runs predev
+clean and *starts* the electron binary (sandbox dies at missing system libs, an environment
+ceiling — on Windows the same spawn opens the window). predev not disabled, better-sqlite3 kept,
+no runtime code touched. Default suite 144 passed + 10 opt-in skips (154, 23 files).
+
 ## Notes for whoever continues
 
 - Every "needs-hardware/partial" line is a **deployment** gap, not a missing

@@ -29,11 +29,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shaFile, swapWithProducedBinding } from './native-swap.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(join(ROOT, 'package.json'));
@@ -50,7 +50,7 @@ const fail = (msg) => {
   process.exit(1);
 };
 
-const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex').slice(0, 16);
+const sha = shaFile;
 const NATIVE_DIR = process.env.LPAI_NATIVE_ROOT ?? join(ROOT, 'native', 'electron');
 
 function magicOk(platform, file) {
@@ -125,25 +125,21 @@ function stashToCache(pkgBin, dest) {
 
 function fetchPrebuilt(bsq, platform, arch, ev, dest) {
   const pkgBin = join(bsq, 'build', 'Release', 'better_sqlite3.node');
-  const backup = join(ROOT, 'native', `.node-backup-${platform}-${arch}`);
-  mkdirSync(dirname(backup), { recursive: true });
-  const had = existsSync(pkgBin);
-  if (had) copyFileSync(pkgBin, backup);
-  try {
-    const pi = join(ROOT, 'node_modules', 'prebuild-install', 'bin.js');
-    if (!existsSync(pi)) return false;
-    const r = spawnSync(process.execPath, [pi, '--runtime=electron', `--target=${ev}`, '--platform', platform, '--arch', arch], {
-      cwd: bsq,
-      stdio: QUIET ? 'ignore' : 'inherit',
-      timeout: 180_000,
-    });
-    if (r.status !== 0 || !existsSync(pkgBin) || (had && sha(pkgBin) === sha(backup))) return false;
-    stashToCache(pkgBin, dest); // BEFORE the restore below
-    return true;
-  } finally {
-    if (had) copyFileSync(backup, pkgBin); // package must end exactly as it started
-    rmSync(backup, { force: true });
-  }
+  const pi = join(ROOT, 'node_modules', 'prebuild-install', 'bin.js');
+  return swapWithProducedBinding({
+    pkgBin,
+    backup: join(ROOT, 'native', `.node-backup-${platform}-${arch}`),
+    produce: () => {
+      if (!existsSync(pi)) return false;
+      const r = spawnSync(process.execPath, [pi, '--runtime=electron', `--target=${ev}`, '--platform', platform, '--arch', arch], {
+        cwd: bsq,
+        stdio: QUIET ? 'ignore' : 'inherit',
+        timeout: 180_000,
+      });
+      return r.status === 0;
+    },
+    stash: (bin) => stashToCache(bin, dest), // BEFORE the restore in the swap's finally
+  });
 }
 
 function rebuildViaElectronRebuild(bsq, dest) {
@@ -151,21 +147,19 @@ function rebuildViaElectronRebuild(bsq, dest) {
   const bin = join(ROOT, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
   if (!existsSync(bin)) return false;
   const pkgBin = join(bsq, 'build', 'Release', 'better_sqlite3.node');
-  const backup = join(ROOT, 'native', '.node-backup-rebuild');
-  copyFileSync(pkgBin, backup);
-  try {
-    const r = spawnSync(process.execPath, [bin, '--force', '--only', 'better-sqlite3'], {
-      cwd: ROOT,
-      stdio: QUIET ? 'ignore' : 'inherit',
-      timeout: 1_800_000,
-    });
-    if (r.status !== 0 || !existsSync(pkgBin) || sha(pkgBin) === sha(backup)) return false;
-    stashToCache(pkgBin, dest); // BEFORE the restore below
-    return true;
-  } finally {
-    copyFileSync(backup, pkgBin); // never leave the Electron build inside node_modules
-    rmSync(backup, { force: true });
-  }
+  return swapWithProducedBinding({
+    pkgBin,
+    backup: join(ROOT, 'native', '.node-backup-rebuild'),
+    produce: () => {
+      const r = spawnSync(process.execPath, [bin, '--force', '--only', 'better-sqlite3'], {
+        cwd: ROOT,
+        stdio: QUIET ? 'ignore' : 'inherit',
+        timeout: 1_800_000,
+      });
+      return r.status === 0;
+    },
+    stash: (b) => stashToCache(b, dest), // BEFORE the restore in the swap's finally
+  });
 }
 
 /** Make the actual Electron binary load the file — definitive ABI verification. */
