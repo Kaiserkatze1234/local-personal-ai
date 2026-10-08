@@ -278,6 +278,8 @@ nicht rot werden, kein „gruen durch Anpassen“.
 | `npm run analyze:failure` | **PASS** — `infrastructure`, KI bewusst nicht aufgerufen | Linux-Sandbox |
 | `npm run feedback:pull` | **PASS** — korrekter Branch erkannt, sauberer „noch kein Lauf“-Exit (3) | Linux-Sandbox |
 | `npx playwright test --list` | **10 Tests in 4 Dateien** korrekt eingesammelt | Linux-Sandbox |
+| **GitHub PR-Checks** (`pull-request-ci.yml`) | **PASS** — Typecheck, Lint, Build, Unit + Integration auf einem frischen Ubuntu-Runner | GitHub Actions, Lauf `37779636957` (PR #1) |
+| **Self-hosted Lauf** (`autonomous-test.yml`) | **in der Warteschlange** — wartet auf den noch nicht installierten Windows-Runner; startet automatisch danach | GitHub Actions |
 
 Selbsttests des Loops: 29 Tests `tests/autonomy.test.ts` + 5 Tests
 `tests/e2e-contract.test.ts` — **alle gruen** (im `npm test`-Lauf enthalten).
@@ -298,6 +300,11 @@ Selbsttests des Loops: 29 Tests `tests/autonomy.test.ts` + 5 Tests
 
 Optional, wenn Ollama ohne Modell installiert ist: `ollama pull qwen3:4b`.
 
+Der Push dieses Branches hat die beiden self-hosted-Laeufe bereits ausgeloest;
+sie warten in der Warteschlange auf den noch nicht installierten Runner und
+laufen nach dessen Installation von selbst (oder werden in der
+Actions-Uebersicht storniert).
+
 **Pro Durchlauf: keiner.** Push → Testlauf → Report → Kommentar → Artefakt.
 Der **einzige verbleibende** manuelle Moment im gesamten Kreislauf ist der
 Start der naechsten Reparaturrunde (Abschnitt 12).
@@ -312,7 +319,11 @@ Start der naechsten Reparaturrunde (Abschnitt 12).
    Auftragsformulierung, Sicherheitsstopps, Rueckweg nach GitHub — ist
    automatisiert. Ein Platzhalter-Endpunkt oder ein „Fake-Trigger“ wurde bewusst
    **nicht** gebaut.
-2. **Smoke/E2E/Ollama sind auf dem Windows-Runner noch nicht gelaufen.** Die
+2. **Smoke/E2E/Ollama sind auf dem Windows-Runner noch nicht gelaufen** — die
+   beiden ausgeloesten Laeufe stehen in der Warteschlange, bis
+   `install-runner.ps1` gelaufen ist. Verifiziert ist bisher: die
+   GitHub-gehosteten PR-Checks (Typecheck/Lint/Build/Tests) und alle
+   Sandbox-Stufen (Abschnitt 10). Die
    Stufen sind implementiert und werden hier korrekt als
    `INFRASTRUCTURE_ERROR`/`SKIP` gemeldet (erste Amtshandlung des Loops:
    Umgebung, nicht Code), aber ihre Gruen-Meldung kann erst nach der
