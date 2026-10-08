@@ -31,6 +31,10 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:autonomous": "node scripts/autonomous-test.mjs",
+    "test:e2e": "playwright test",
+    "analyze:failure": "node scripts/analyze-failure.mjs",
+    "feedback:pull": "node scripts/feedback-pull.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",
     "dist": "npm run build && electron-builder --win",
@@ -45,6 +49,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "@electron/rebuild": "^4.2.0",
+    "@playwright/test": "^1.64.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.4",
     "@types/react": "^19.3.0",

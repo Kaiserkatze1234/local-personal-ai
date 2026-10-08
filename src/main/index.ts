@@ -35,8 +35,11 @@ import { resolveSqliteBinding } from './storage/db.js';
 // Pin the data location BEFORE 'ready' locks it (the instance-socket path
 // also lives in userData): %APPDATA%\lpai on Windows, ~/.config/lpai on
 // Linux — identical in dev and packaged, exactly what the README promises.
+// The documented dev/test override (LPAI_DATA_DIR) drives userData too, so an
+// automated run shares neither window state nor the single-instance lock with
+// the installed app — test setups must not disturb the real data directory.
 try {
-  app.setPath('userData', join(app.getPath('appData'), 'lpai'));
+  app.setPath('userData', process.env[DATA_DIR_ENV] ?? join(app.getPath('appData'), 'lpai'));
 } catch {
   /* setPath after ready is rejected; non-Electron hosts never reach boot() anyway */
 }

@@ -6,7 +6,7 @@
  * swap helper must handle both worlds and restore node_modules EXACTLY as it
  * started — including back to "absent".
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -103,5 +103,47 @@ describe('swapWithProducedBinding — missing pre-rebuild binding (the crash cas
     });
     expect(ok).toBe(false);
     expect(shaFile(pkgBin)).toBe(original);
+  });
+
+  it('producer DELETES build/Release before failing (node-gyp clean offline): restore must still be byte-exact', () => {
+    // Reproduced on a network-less machine: prebuild-install fails, the
+    // @electron/rebuild fallback starts node-gyp, node-gyp cleans build/Release
+    // and then dies fetching headers. The old finally copied the backup back
+    // into a directory that no longer existed -> ENOENT out of the finally,
+    // package left WITHOUT a Node binding, backup stranded in native/.
+    writeFileSync(pkgBin, 'NODE-ABI-original');
+    const original = shaFile(pkgBin);
+    const ok = swapWithProducedBinding({
+      pkgBin,
+      backup,
+      produce: () => {
+        rmSync(join(dir, 'build'), { recursive: true, force: true }); // the clean
+        return false; // …then the rebuild failed
+      },
+      stash: () => {
+        throw new Error('nothing was produced — must not stash');
+      },
+    });
+    expect(ok).toBe(false);
+    expect(existsSync(pkgBin), 'die Node-ABI-Bindung muss wieder da sein').toBe(true);
+    expect(shaFile(pkgBin)).toBe(original);
+    expect(existsSync(backup), 'kein Backup-Rest').toBe(false);
+  });
+
+  it('fails loudly when the restore cannot reproduce the original bytes', () => {
+    // A silent not-quite-restore would poison every later `npm test` with a
+    // binding nobody can explain — so the sha is checked and a mismatch throws.
+    writeFileSync(pkgBin, 'NODE-ABI-original');
+    expect(() =>
+      swapWithProducedBinding({
+        pkgBin,
+        backup,
+        produce: () => {
+          writeFileSync(backup, 'SABOTAGED-BACKUP'); // disk corruption / truncated copy
+          return false;
+        },
+        stash: () => undefined,
+      }),
+    ).toThrow(/restoring the original binding failed/);
   });
 });

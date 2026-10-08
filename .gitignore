@@ -9,3 +9,7 @@ coverage/
 .vite/
 *.local
 native/
+
+# autonomous test loop output (reports live in CI artifacts, not in git)
+test-reports/*
+!test-reports/.gitkeep

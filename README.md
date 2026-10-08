@@ -51,6 +51,35 @@ npm run dist         # electron-builder NSIS installer (run on Windows)
 Headless exploration without Electron: the whole core is bootable from node —
 see `tests/helpers.ts` for the minimal invocation.
 
+## Automated test loop (Windows runner → GitHub)
+
+Pushing to `main` or `arena/*` starts the real test suite on the Windows PC and
+reports back into GitHub — no ZIP, no manual test start, no copy-paste:
+
+```
+Arena → push/PR → GitHub Actions (self-hosted Windows runner)
+      → npm run test:autonomous  (prereqs, native, typecheck, build, unit,
+                                  integration, smoke, Electron E2E, Ollama)
+      → test-reports/latest.{json,md} + latest-fix-prompt.md + screenshots/traces
+      → Check annotations + structured PR comment + workflow artifacts
+      → npm run feedback:pull  (Arena reads the run back)
+```
+
+* `npm run test:autonomous` is the single entry point (also runnable locally).
+  `--quick` skips smoke/E2E/Ollama, `--require-ollama` makes the local runtime
+  mandatory. Plain Node, no extra dependencies.
+* Status is never faked: `PASS` / `FAIL` / `SKIP` / `INFRASTRUCTURE_ERROR`.
+  A missing Ollama or a missing Electron dist is **never** a pass.
+* Failure analysis runs only on failure and reuses the app's own model
+  infrastructure (`ModelRouter`/`ModelRoleService`); deterministic rules first,
+  the local model only when the evidence is not decisive.
+* The automatic repair cycle stops on repeated identical errors, infrastructure
+  errors, missing Ollama, regressions and dangerous changes.
+
+One-time setup (install the runner + warm the dependencies) and the exact
+remaining interface limit are documented in
+[`docs/AUTONOMOUS_LOOP.md`](docs/AUTONOMOUS_LOOP.md).
+
 ## Layout
 
 ```

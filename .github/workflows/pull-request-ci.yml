@@ -1,0 +1,51 @@
+# Fast, safe checks for every pull request — including forks.
+#
+# This workflow only uses GitHub-hosted runners, so it is safe to expose to
+# `pull_request` (an untrusted fork cannot come anywhere near the self-hosted
+# Windows test PC). It answers the "does it build and do the fast tests pass"
+# question in minutes; the real Windows/Electron/Ollama run happens in
+# autonomous-test.yml on the self-hosted runner.
+name: PR checks (hosted)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit + integration tests
+        run: npm test
+
+      # The Electron E2E suite and the real-Ollama stage intentionally do NOT run
+      # here: GitHub-hosted runners have neither the user's Ollama nor a desktop
+      # session for the GUI tests. Running them anyway would only produce flaky
+      # noise — the Windows runner is the place for them (autonomous-test.yml).

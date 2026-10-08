@@ -33,6 +33,7 @@ export function swapWithProducedBinding({ pkgBin, backup, produce, stash }) {
     copyFileSync(pkgBin, backup);
   }
   let ok = false;
+  let restoreError = null;
   try {
     ok = produce() === true;
     // a successful producer MUST have left the expected binding on disk —
@@ -41,9 +42,25 @@ export function swapWithProducedBinding({ pkgBin, backup, produce, stash }) {
     if (ok && had && shaFile(pkgBin) === originalSha) ok = false;
     if (ok) stash(pkgBin);
   } finally {
-    if (had) copyFileSync(backup, pkgBin);
-    else rmSync(pkgBin, { force: true });
+    // The producer's first act can be a clean: node-gyp/@electron-rebuild remove
+    // build/Release entirely before they (possibly) fail. Restoring into a
+    // directory that no longer exists threw ENOENT out of this finally — which
+    // left the package WITHOUT its Node binding and the backup stranded on disk
+    // (real failure mode: offline/module-mismatch fetch failing on Windows).
+    if (had) {
+      mkdirSync(dirname(pkgBin), { recursive: true });
+      copyFileSync(backup, pkgBin);
+      const restored = shaFile(pkgBin);
+      if (restored !== originalSha) {
+        // recorded, not thrown: a throw from finally would mask the producer's
+        // own error and leave the caller without the real reason
+        restoreError = new Error(`restoring the original binding failed (sha ${restored} != ${String(originalSha)})`);
+      }
+    } else {
+      rmSync(pkgBin, { force: true });
+    }
     rmSync(backup, { force: true });
   }
+  if (restoreError) throw restoreError;
   return ok;
 }
