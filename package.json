@@ -1,0 +1,63 @@
+{
+  "name": "local-personal-ai",
+  "productName": "Local Personal AI",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "allowScripts": {
+    "better-sqlite3": true,
+    "electron": true,
+    "electron-winstaller": true,
+    "esbuild": true
+  },
+  "description": "Local-first personal AI agent for Windows (Electron + TypeScript + React). Runtime model is provider-pluggable; no hard dependency on any specific model.",
+  "main": "dist/main/index.js",
+  "author": "user",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n MAIN,UI,APP -c cyan,green,magenta \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "predev": "node scripts/rebuild-native.mjs --quiet",
+    "pretest": "node scripts/rebuild-native.mjs --quiet --node-only",
+    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "predist": "node scripts/rebuild-native.mjs --dist",
+    "dev:main": "node scripts/build.mjs --watch",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-port 5173 && cross-env LPAI_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "build": "node scripts/build.mjs && vite build",
+    "bench": "node scripts/bench.mjs",
+    "smoke": "npm run build && cross-env LPAI_SMOKE=1 electron .",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "dist": "npm run build && electron-builder --win",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.13",
+    "@electron/rebuild": "^4.2.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^9.2.4",
+    "cross-env": "^10.1.0",
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^4.1.11",
+    "wait-port": "^1.1.0"
+  }
+}

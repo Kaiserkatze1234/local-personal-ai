@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+release/
+*.log
+.install.log
+.DS_Store
+coverage/
+.vite/
+*.local
+native/
