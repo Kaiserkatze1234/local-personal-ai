@@ -3,6 +3,10 @@
  * incrementally, Stop really cancels an in-flight generation, and a provider
  * error is shown honestly instead of being converted into a fake answer.
  *
+ * Also the two scenarios that must never need special-casing: a bare greeting
+ * ("Hallo") and a question about the app's own working conditions — both are
+ * ordinary turns and must come back as ordinary answers.
+ *
  * The model behind the socket is scripted (tests/e2e/harness.ts) so every
  * assertion is deterministic; the app side is entirely real — router, context
  * engine, agent core, IPC, renderer.
@@ -11,7 +15,7 @@ import { expect, test } from '@playwright/test';
 import { askViaUi, assistantBubbles, bubbleText, launchApp, waitForReady } from './harness.js';
 
 test.describe('Chat: answer, streaming, cancel, provider error', () => {
-  test('a normal question is answered and the answer is exactly what the model returned', async (_fixtures, testInfo) => {
+  test('a normal question is answered and the answer is exactly what the model returned', async () => {
     const h = await launchApp({ replies: [{ text: 'Der Himmel ist blau.' }] });
     try {
       await waitForReady(h.page);
@@ -36,12 +40,12 @@ test.describe('Chat: answer, streaming, cancel, provider error', () => {
       expect(messages.data?.map((m) => m.role)).toEqual(['user', 'assistant']);
       expect(messages.data?.[1]?.content).toBe('Der Himmel ist blau.');
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });
 
-  test('streaming renders incrementally, not in one jump', async (_fixtures, testInfo) => {
+  test('streaming renders incrementally, not in one jump', async () => {
     const full = `Hier ist eine längere Antwort, die Stück für Stück ankommt und am Ende vollständig sein muss. ${'Teil '.repeat(20)}ENDE-4417`;
     const h = await launchApp({ replies: [{ text: full, chunkSize: 10, chunkDelayMs: 120 }] });
     try {
@@ -57,12 +61,12 @@ test.describe('Chat: answer, streaming, cancel, provider error', () => {
 
       await expect.poll(() => bubbleText(bubble), { timeout: 60_000 }).toBe(full);
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });
 
-  test('Stop cancels the running generation and the UI returns to a usable state', async (_fixtures, testInfo) => {
+  test('Stop cancels the running generation and the UI returns to a usable state', async () => {
     const long = `Sehr lange Antwort die abgebrochen werden soll. ${'Weiter '.repeat(60)}NIE-ERREICHT`;
     const h = await launchApp({ replies: [{ text: long, chunkSize: 10, chunkDelayMs: 150 }] });
     try {
@@ -81,12 +85,12 @@ test.describe('Chat: answer, streaming, cancel, provider error', () => {
       expect(after.length, 'kein Weiterlaufen nach Stop').toBeLessThanOrEqual(frozen.length);
       expect(after).not.toContain('NIE-ERREICHT');
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });
 
-  test('a provider error surfaces as an honest notice instead of a fabricated answer', async (_fixtures, testInfo) => {
+  test('a provider error surfaces as an honest notice instead of a fabricated answer', async () => {
     const h = await launchApp({ replies: [{ text: 'should never be shown', status: 500 }] });
     try {
       await waitForReady(h.page);
@@ -97,7 +101,46 @@ test.describe('Chat: answer, streaming, cancel, provider error', () => {
       await expect(notice).toContainText(/500|failed|generation/i);
       expect(await assistantBubbles(h.page).count(), 'kein erfundener Assistenten-Text').toBe(0);
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
+      await h.close();
+    }
+  });
+});
+
+test.describe('Chat: everyday scenarios', () => {
+  test('a bare greeting is answered and the answer is shown verbatim', async () => {
+    const h = await launchApp({ replies: [{ text: 'Hallo! Wie kann ich helfen?' }] });
+    try {
+      await waitForReady(h.page);
+      await askViaUi(h.page, 'Hallo');
+
+      const bubble = assistantBubbles(h.page).last();
+      await expect.poll(() => bubbleText(bubble), { timeout: 30_000 }).toBe('Hallo! Wie kann ich helfen?');
+      expect(h.provider?.sentText() ?? '', 'die Begrüßung ging an das Modell').toContain('Hallo');
+    } finally {
+      await h.attachDiagnostics(test.info());
+      await h.close();
+    }
+  });
+
+  test('a question about the working conditions is answered without internal noise', async () => {
+    // "coding conditions": when may the assistant touch code? The app answers
+    // this as a normal chat turn — the test asserts exactly that, and that the
+    // visible answer is the model's text, not a system/context dump.
+    const answer = 'Ich darf Code nur in freigegebenen Projektordnern ändern und frage vorher um Erlaubnis.';
+    const h = await launchApp({ replies: [{ text: answer }] });
+    try {
+      await waitForReady(h.page);
+      await askViaUi(h.page, 'Unter welchen Bedingungen darfst du Code ausführen?');
+
+      const bubble = assistantBubbles(h.page).last();
+      await expect.poll(() => bubbleText(bubble), { timeout: 30_000 }).toBe(answer);
+      for (const marker of ['[verification]', 'tool_call', '"role"', '<|', 'renderContextBlock']) {
+        expect(await bubbleText(bubble), `kein interner Marker "${marker}" in der Antwort`).not.toContain(marker);
+      }
+      expect(await assistantBubbles(h.page).count(), 'genau eine Assistenten-Antwort').toBe(1);
+    } finally {
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });

@@ -107,6 +107,9 @@ jobs:
           path: |
             test-reports/latest.json
             test-reports/latest.md
+            test-reports/latest-chatgpt.json
+            test-reports/latest-chatgpt.md
+            test-reports/latest-arena-task.md
             test-reports/latest-fix-prompt.md
             test-reports/latest-analysis.json
             test-reports/cycle-state.json
@@ -114,6 +117,21 @@ jobs:
             test-reports/*.md
             test-reports/artifacts/**
             test-reports/e2e-artifacts/**
+
+      - name: Upload the machine-readable handoff for the analyzing instance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lpai-ai-handoff
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            test-reports/latest-chatgpt.json
+            test-reports/latest-chatgpt.md
+            test-reports/latest-arena-task.md
+            test-reports/latest-analysis.json
+            test-reports/latest.json
+            test-reports/latest.md
 
       - name: Failure artifacts (raw, short retention)
         if: steps.run.outcome == 'failure'
@@ -155,7 +173,14 @@ jobs:
               if (report.analysis?.final) lines.push('', `Analyse: **${report.analysis.final.category}** (${report.analysis.final.confidence}) — ${report.analysis.final.probableCause}`);
               if (report.stages?.some((s) => s.status === 'INFRASTRUCTURE_ERROR')) lines.push('', '⚠️ Mindestens eine Stufe ist **INFRASTRUCTURE_ERROR** — Umgebung prüfen, das ist kein Codefehler.');
               if (report.guards?.stop) lines.push('', `⛔ Automatischer Reparaturzyklus **gestoppt**: ${(report.guards.reasons || []).join(', ')} — bewusste Entscheidung nötig.`);
-              lines.push('', `Reparaturauftrag: \`test-reports/latest-fix-prompt.md\` (Artefakt \`lpai-test-reports\`)${report.runner?.githubRunUrl ? ` · [Lauf](${report.runner.githubRunUrl})` : ''}`);
+              lines.push('', `Reparaturauftrag: \`test-reports/latest-arena-task.md\` · Digest: \`test-reports/latest-chatgpt.json\` (Artefakt \`lpai-ai-handoff\`)${report.runner?.githubRunUrl ? ` · [Lauf](${report.runner.githubRunUrl})` : ''}`);
+              // the compact digest is appended verbatim (collapsed) so that an
+              // analyzing instance can read the whole run WITHOUT an artifact
+              // download — the comment is public and plain markdown.
+              try {
+                const digest = fs.readFileSync('test-reports/latest-chatgpt.md', 'utf8').trim();
+                if (digest) lines.push('', '<details><summary>Digest für die Analyse (latest-chatgpt.md)</summary>', '', digest.slice(0, 6000), '', '</details>');
+              } catch (e) { /* no digest (run died early) — the human part above still stands */ }
               body = lines.join('\n');
             } catch (e) {
               body = marker + `\nReport konnte nicht gelesen werden: ${e.message}`;
@@ -201,7 +226,7 @@ jobs:
               '',
               `Gründe: ${reasons.map((r) => `\`${r}\``).join(', ')}`,
               '',
-              'Das bedeutet bewusst: **nicht** weiter automatisch reparieren. Der vollständige Report und der Reparaturauftrag liegen im Artefakt `lpai-test-reports` dieses Laufs.',
+              'Das bedeutet bewusst: **nicht** weiter automatisch reparieren. Der vollständige Report und der Reparaturauftrag liegen in den Artefakten `lpai-test-reports` und `lpai-ai-handoff` dieses Laufs.',
               '',
               `Lauf: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');

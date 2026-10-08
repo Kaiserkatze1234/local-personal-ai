@@ -13,11 +13,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DANGEROUS_PATHS, dangerousChangedFiles, evaluateGuards, explainStop, normalizeState } from '../scripts/autonomous/guards.mjs';
 import {
+  buildAiDigest,
   buildReport,
   extractErrorLines,
   fingerprintOf,
   makeStage,
   REPORT_MARKER,
+  renderAiDigestMarkdown,
+  renderArenaTask,
   renderComment,
   renderFixPrompt,
   renderMarkdown,
@@ -85,12 +88,18 @@ interface Report {
     infrastructureErrors: number;
     failedStages: string[];
     failedTests: string[];
+    skippedTests: string[];
   };
+  changedFiles?: string[];
+  previousTestedSha?: string | null;
+  likelyRootCause?: string | null;
+  confidence?: number | null;
   analysis?: Record<string, unknown> | null;
+  guards?: Record<string, unknown> | null;
   artifacts: { screenshots: string[]; traces: string[]; logs: string[]; other: string[] };
 }
 const build = buildReport as unknown as (input: {
-  meta: { git: GitInfo; runner: typeof runner; ollama: object };
+  meta: { git: GitInfo; runner: typeof runner; ollama: object; changedFiles?: string[]; previousTestedSha?: string | null };
   stages: object[];
   guards?: object | null;
   analysis?: object | null;
@@ -103,6 +112,50 @@ const fixPrompt = renderFixPrompt as unknown as (
   opts?: { baselineFailures?: string[]; analysis?: Record<string, unknown> | null },
 ) => string;
 const commentFor = renderComment as unknown as (report: Report) => string;
+interface Digest {
+  verdict: string;
+  works: string[];
+  broken: string[];
+  failedTests: string[];
+  skippedTests: string[];
+  isCodeDefect: boolean;
+  isInfrastructureError: boolean;
+  recommendedFix: string;
+  likelyRootCause: string | null;
+  confidence: number | null;
+  humanSummary: string;
+  whatWasTested: { branch: string; commit: string; changedFiles: string[]; previousTestedSha: string | null; stages: { name: string }[] };
+  infrastructureErrors: { stage: string; reason: string | null }[];
+  classification: { category: string; categoryLabel: string; source: string };
+  regression: {
+    isRegression: boolean;
+    repeatedFailure: boolean;
+    progress: string;
+    newFailures: string[];
+    fixedSinceLastRun: string[];
+    alreadyBrokenBefore: string[];
+    previousVerdict: string | null;
+    stopped: boolean;
+  };
+  reproduce: { clone: string | null; commit: string; steps: string[] };
+  testsToRerun: { stages: string[]; failedTests: string[]; command: string; mustStayGreen: string[] };
+  artifacts: { arenaTask: string | null; reportJson: string };
+  failures: { stage: string; environmentProblem: boolean }[];
+}
+const aiDigest = buildAiDigest as unknown as (
+  report: Report,
+  opts?: {
+    analysis?: Record<string, unknown> | null;
+    baselineFailures?: string[];
+    previousVerdict?: string | null;
+    previousFingerprint?: string | null;
+  },
+) => Digest;
+const aiDigestMd = renderAiDigestMarkdown as unknown as (digest: object) => string;
+const arenaTask = renderArenaTask as unknown as (
+  report: Report,
+  opts?: { analysis?: Record<string, unknown> | null; baselineFailures?: string[] },
+) => string;
 
 const evaluate = evaluateGuards as unknown as (input: {
   previous?: CycleState | null;
@@ -531,6 +584,243 @@ describe('failure analysis rules', () => {
   });
 });
 
+describe('AI handoff — digest for the analyzing instance', () => {
+  const codeFailure = () =>
+    build({
+      meta: { git, runner, ollama: ollamaUp, changedFiles: ['src/main/app.ts', 'src/renderer/App.tsx'], previousTestedSha: 'b'.repeat(40) },
+      stages: [
+        stage('typecheck', 'PASS'),
+        stage('unit', 'FAIL', {
+          failedTests: ['chat turn › streams deltas'],
+          errors: ['AssertionError: expected 2 to be 3 at src/main/app.ts:120'],
+          counts: { passed: 180, failed: 1, skipped: 3 },
+        }),
+        stage('ollama', 'SKIP', { note: 'Ollama nicht erreichbar', skippedTests: ['live › chat'] }),
+      ],
+      guards: { attempt: 2, maxAttempts: 3, stop: false, reasons: [], cycleId: 'cycle-7', fingerprint: 'abc123', repeats: 1 },
+      startedAt: 0,
+      finishedAt: 30_000,
+    });
+
+  it('answers the questions a planning instance asks, without raw logs', () => {
+    const d = aiDigest(codeFailure());
+    expect(d.verdict).toBe('FAIL');
+    expect(d.whatWasTested.branch).toBe('arena/test');
+    expect(d.whatWasTested.commit).toBe(git.commit);
+    expect(d.whatWasTested.changedFiles).toEqual(['src/main/app.ts', 'src/renderer/App.tsx']);
+    expect(d.whatWasTested.previousTestedSha).toBe('b'.repeat(40));
+    expect(d.works).toEqual(['typecheck']);
+    expect(d.broken).toEqual(['unit']);
+    expect(d.failedTests).toContain('chat turn › streams deltas');
+    expect(d.skippedTests).toContain('live › chat');
+    expect(d.isCodeDefect).toBe(true);
+    expect(d.isInfrastructureError).toBe(false);
+    expect(d.recommendedFix.length).toBeGreaterThan(10);
+    expect(d.reproduce.clone).toBeNull(); // no remote configured in this fixture
+    expect(d.reproduce.commit).toBe(git.commit);
+    expect(d.testsToRerun.stages).toEqual(['unit']);
+    expect(d.testsToRerun.failedTests).toContain('chat turn › streams deltas');
+    expect(d.testsToRerun.mustStayGreen).toContain('typecheck');
+    expect(d.artifacts.arenaTask).toBe('test-reports/latest-arena-task.md');
+    // no repository dump, no full log: the digest stays a summary
+    expect(JSON.stringify(d).length).toBeLessThan(20_000);
+  });
+
+  it('separates an environment problem from a code defect (and says so)', () => {
+    const report = build({
+      meta: { git, runner, ollama: { ...ollamaUp, reachable: false, note: 'fetch failed' } },
+      stages: [
+        stage('unit', 'PASS'),
+        stage('e2e', 'INFRASTRUCTURE_ERROR', { errors: ['Electron-Dist fehlt — E2E kann die App nicht starten'] }),
+      ],
+      guards: {
+        attempt: 1,
+        maxAttempts: 3,
+        stop: true,
+        reasons: ['infrastructure_error'],
+        cycleId: 'cycle-8',
+        fingerprint: 'def456',
+        repeats: 1,
+      },
+      startedAt: 0,
+      finishedAt: 5000,
+    });
+    const d = aiDigest(report, {
+      analysis: {
+        final: {
+          category: 'infrastructure',
+          confidence: 0.8,
+          component: 'e2e',
+          observation: 'Electron-Dist fehlt',
+          probableCause: 'Electron binary not installed',
+          recommendedFix: 'Install the Electron runtime, then re-run',
+          source: 'heuristic',
+        },
+        ai: null,
+      },
+    });
+    expect(d.verdict).toBe('INFRASTRUCTURE_ERROR');
+    expect(d.isInfrastructureError).toBe(true);
+    expect(d.isCodeDefect).toBe(false);
+    expect(d.infrastructureErrors[0]?.stage).toBe('e2e');
+    expect(d.classification.category).toBe('infrastructure');
+    expect(d.classification.categoryLabel).toBe('Infrastruktur/Umgebung');
+    expect(d.confidence).toBe(0.8);
+    expect(d.likelyRootCause).toBe('Electron binary not installed');
+    expect(d.recommendedFix).toContain('Install the Electron runtime');
+    expect(d.failures[0]?.environmentProblem).toBe(true);
+    expect(d.humanSummary).toContain('e2e');
+  });
+
+  it('detects a regression: green before, red now, with the new failure named', () => {
+    const d = aiDigest(codeFailure(), {
+      previousVerdict: 'PASS',
+      previousFingerprint: 'zzz999',
+      baselineFailures: [],
+    });
+    expect(d.regression.isRegression).toBe(true);
+    expect(d.regression.progress).toBe('worse');
+    expect(d.regression.newFailures).toContain('chat turn › streams deltas');
+    expect(d.regression.previousVerdict).toBe('PASS');
+  });
+
+  it('recognises progress and a repeated identical failure instead of calling everything a regression', () => {
+    const d = aiDigest(codeFailure(), {
+      previousVerdict: 'FAIL',
+      previousFingerprint: 'abc123',
+      baselineFailures: ['chat turn › streams deltas', 'chat turn › streams deltas', 'memory › persist'],
+    });
+    // the only failure is the pre-existing one, and nothing new broke
+    expect(d.regression.isRegression).toBe(false);
+    expect(d.regression.newFailures).toEqual([]);
+    expect(d.regression.fixedSinceLastRun).toEqual(['memory › persist']);
+    expect(d.regression.progress).toBe('improving');
+    // same fingerprint as the previous run → the loop must be able to stop
+    expect(d.regression.repeatedFailure).toBe(true);
+    expect(d.regression.alreadyBrokenBefore).toEqual(['chat turn › streams deltas', 'memory › persist']);
+  });
+
+  it('renders a compact, readable digest instead of a wall of text', () => {
+    const d = aiDigest(codeFailure(), { analysis: null, baselineFailures: [] });
+    const md = aiDigestMd(d);
+    expect(md).toContain('Was getestet wurde');
+    expect(md).toContain('Was ist kaputt');
+    expect(md).toContain('Was funktioniert');
+    expect(md).toContain('chat turn › streams deltas');
+    expect(md).toContain('test:autonomous');
+    expect(md.length).toBeLessThan(8000);
+    // a long skip list is summarised, never dumped
+    const many = aiDigest(
+      build({
+        meta: { git, runner, ollama: ollamaUp },
+        stages: [stage('ollama', 'SKIP', { skippedTests: Array.from({ length: 40 }, (_, i) => `live › test ${i}`) })],
+        guards: null,
+        startedAt: 0,
+        finishedAt: 1000,
+      }),
+    );
+    const mdMany = aiDigestMd(many);
+    expect(mdMany).toContain('weitere');
+    for (let i = 10; i < 40; i++) expect(mdMany).not.toContain(`live › test ${i}`);
+  });
+});
+
+describe('Arena order — latest-arena-task.md', () => {
+  const failing = () =>
+    build({
+      meta: {
+        git,
+        runner,
+        ollama: { ...ollamaUp, reachable: false },
+        changedFiles: ['src/main/app.ts'],
+        previousTestedSha: 'b'.repeat(40),
+      },
+      stages: [
+        stage('typecheck', 'PASS'),
+        stage('unit', 'FAIL', {
+          failedTests: ['chat turn › streams deltas'],
+          errors: ['AssertionError: expected 2 to be 3 at src/main/app.ts:120'],
+          artifacts: ['test-results/unit.png'],
+        }),
+        stage('e2e', 'FAIL', { errors: ['Timeout 30000ms exceeded'], artifacts: ['test-results/trace.zip'] }),
+      ],
+      guards: { attempt: 1, maxAttempts: 3, stop: false, reasons: [], cycleId: 'cycle-9', fingerprint: 'fff999', repeats: 1 },
+      startedAt: 0,
+      finishedAt: 60_000,
+    });
+
+  it('contains every section the coding agent is supposed to work from', () => {
+    const md = arenaTask(failing(), {
+      analysis: {
+        final: {
+          category: 'code_defect',
+          confidence: 0.7,
+          component: 'unit',
+          file: 'src/main/app.ts',
+          observation: 'unit stage red',
+          probableCause: 'streaming assertion drifted',
+          recommendedFix: 'fix the streaming assertion',
+          source: 'heuristic',
+        },
+        ai: { modelId: 'ollama:qwen3', answer: 'x' },
+      },
+      baselineFailures: ['memory › persist'],
+    });
+    for (const section of [
+      '## Problem',
+      '## Reproduktion',
+      '## Expected',
+      '## Actual',
+      '## Betroffene Tests',
+      '## Relevante Dateien',
+      '## Relevante Logs',
+      '## Trace / Screenshot',
+      '## Wahrscheinliche Ursache',
+      '## Gewünschtes Verhalten',
+      '## Einschränkungen',
+      '## Regressionstest-Anforderung',
+      '## Loop-Status',
+    ]) {
+      expect(md, `Abschnitt ${section} fehlt`).toContain(section);
+    }
+    expect(md).toContain('src/main/app.ts');
+    expect(md).toContain('test-results/trace.zip');
+    expect(md).toContain('chat turn › streams deltas');
+    expect(md).toContain('code_defect');
+    expect(md).toContain('Bereits vorher rot');
+    expect(md).toContain('npm run test:autonomous');
+    expect(md).toContain('git clone'); // a URL one can actually clone, never a placeholder
+    expect(md).toContain('Regressionstest');
+    // bounded: the order is a briefing, not a log dump
+    expect(md.length).toBeLessThan(12_000);
+  });
+
+  it('is explicit when the cause is the environment, so nobody "fixes" working code', () => {
+    const report = build({
+      meta: { git, runner, ollama: { ...ollamaUp, reachable: false } },
+      stages: [stage('smoke', 'INFRASTRUCTURE_ERROR', { errors: ['Electron-Dist fehlt'] })],
+      guards: {
+        attempt: 1,
+        maxAttempts: 3,
+        stop: true,
+        reasons: ['infrastructure_error'],
+        cycleId: 'cycle-10',
+        fingerprint: 'iii111',
+        repeats: 1,
+      },
+      startedAt: 0,
+      finishedAt: 1000,
+    });
+    const md = arenaTask(report, { analysis: null });
+    expect(md).toContain('Umgebungsvoraussetzung');
+    expect(md).toContain('keine** Codeänderung');
+    expect(md).toContain('**Automatik gestoppt**');
+    expect(md).toContain('infrastructure_error');
+    // without an analysis the order must say it is missing, not invent one
+    expect(md).toContain('npm run analyze:failure');
+  });
+});
+
 describe('loop wiring (single source of truth)', () => {
   it('exposes the loop through npm scripts and the Playwright dev dependency', () => {
     const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string>; devDependencies: Record<string, string> };
@@ -599,6 +889,7 @@ describe('loop wiring (single source of truth)', () => {
       'tests/e2e/startup.spec.ts',
       'tests/e2e/chat.spec.ts',
       'tests/e2e/memory-context.spec.ts',
+      'tests/e2e/tasks.spec.ts',
       'tests/e2e/real-ollama.spec.ts',
     ]) {
       const src = read(spec);
@@ -609,6 +900,36 @@ describe('loop wiring (single source of truth)', () => {
     // isolation is switched by the documented env var, honoured by the Electron entry
     expect(read('src/main/index.ts')).toContain('process.env[DATA_DIR_ENV] ?? join(app.getPath');
     expect(read('tests/e2e/harness.ts')).toContain('LPAI_DATA_DIR: dataDir');
+  });
+
+  it('publishes both handoff artefacts and keeps the digest readable without an artifact download', () => {
+    const wf = read('.github/workflows/autonomous-test.yml');
+    // the two audiences must both be published
+    expect(wf).toContain('name: lpai-ai-handoff');
+    expect(wf).toContain('test-reports/latest-chatgpt.json');
+    expect(wf).toContain('test-reports/latest-arena-task.md');
+    // the PR comment carries the compact digest, so an analyzing instance that
+    // can only read the pull request still sees the whole run
+    expect(wf).toContain('latest-chatgpt.md');
+    expect(wf).toContain('<details>');
+    // and it stays bounded — a comment is not a log dump
+    expect(wf).toContain("readFileSync('test-reports/latest-chatgpt.md', 'utf8')");
+    expect(wf).toMatch(/digest\.slice\(0, \d{4}\)/);
+
+    const orch = read('scripts/autonomous-test.mjs');
+    expect(orch).toContain("writeFileSync(join(CFG.outDir, 'latest-chatgpt.json')");
+    expect(orch).toContain("writeFileSync(join(CFG.outDir, 'latest-arena-task.md')");
+    // a green run must not leave a repair order from an older run behind
+    expect(orch).toContain("rmSync(join(CFG.outDir, 'latest-arena-task.md'), { force: true })");
+
+    const analyzer = read('scripts/analyze-failure.mjs');
+    expect(analyzer).toContain("'latest-chatgpt.json'");
+    expect(analyzer).toContain("'latest-arena-task.md'");
+
+    const pull = read('scripts/feedback-pull.mjs');
+    expect(pull).toContain('lpai-ai-handoff');
+    expect(pull).toContain("join(artifactDir, 'latest-arena-task.md')");
+    expect(pull).toContain("writeFileSync(join(inbox, 'ARENA-TASK.md')");
   });
 
   it('wires the offline failure analysis into the orchestrator without a model dependency for normal runs', () => {

@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 import { launchApp, waitForReady } from './harness.js';
 
 test.describe('App start, bridge, IPC, shutdown', () => {
-  test('starts, shows the window, loads the renderer and answers IPC through the preload bridge', async (_fixtures, testInfo) => {
+  test('starts, shows the window, loads the renderer and answers IPC through the preload bridge', async () => {
     const h = await launchApp();
     try {
       const windows = h.app.windows();
@@ -60,12 +60,12 @@ test.describe('App start, bridge, IPC, shutdown', () => {
 
       expect(h.pageErrors, 'keine Renderer-Ausnahmen').toEqual([]);
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });
 
-  test('closes cleanly: window close ends the process with exit code 0', async (_fixtures, testInfo) => {
+  test('closes cleanly: window close ends the process with exit code 0', async () => {
     const h = await launchApp();
     try {
       await waitForReady(h.page);
@@ -81,7 +81,7 @@ test.describe('App start, bridge, IPC, shutdown', () => {
       await expect.poll(() => h.app.process().exitCode, { timeout: 30_000, message: 'Prozess beendet sich' }).not.toBeNull();
       expect(h.app.process().exitCode, 'sauberer Exitcode (dispose-Kette lief durch)').toBe(0);
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close({ keepProvider: true });
     }
   });

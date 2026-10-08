@@ -340,9 +340,11 @@ export class AgentCore {
     this.messages.add(input.conversationId, { id: assistantMessageId, role: 'assistant', content: text, createdAt: nowIso() });
     this.hooks.onMessageAppended?.(input.conversationId);
     // explicit "remember that ..." in plain chat becomes a memory candidate
-    if (/^(remember that|merk dir|don'?t forget)/i.test(input.userText.trim())) {
+    // (German "Merke dir: ..." is the phrasing the user actually types, so it
+    //  must work as well as the English one)
+    if (/^(remember that|merk dir|merke dir|merke|don'?t forget|note that)\b/i.test(input.userText.trim())) {
       try {
-        const content = input.userText.trim().replace(/^(remember that|merk dir|don'?t forget[:,!]?)\s*/i, '');
+        const content = input.userText.trim().replace(/^(remember that|merk dir|merke dir|merke|don'?t forget|note that)\s*[:,!]?\s*/i, '');
         this.memory.add({ content, type: 'preference', importance: 0.7, source: 'user', autoConfirm: !cfg.memory.requireReview });
       } catch (err) {
         this.log.warn(`memory capture failed: ${(err as Error).message}`);

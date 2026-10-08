@@ -10,13 +10,16 @@
  * this CLI exists for re-running the analysis on an old report — e.g. after
  * installing a model — without repeating the test run.
  *
- * Writes: <out>/latest-analysis.json and, when the report is not PASS,
- * regenerates <out>/latest-fix-prompt.md with the analysis folded in.
+ * Writes: <out>/latest-analysis.json and, when the report is not PASS, regenerates
+ * the handoff files with the analysis folded in: latest-chatgpt.json/.md (digest
+ * for the analyzing instance), latest-arena-task.md (repair order) and
+ * latest-fix-prompt.md (compatibility). On PASS those files are removed, so a
+ * stale order can never be mistaken for the current state.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderFixPrompt } from './autonomous/report.mjs';
+import { buildAiDigest, renderAiDigestMarkdown, renderArenaTask, renderFixPrompt } from './autonomous/report.mjs';
 import { ensureBundle } from './lib/ensure-bundle.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,8 +57,17 @@ const result = await analyzeFailure({
 });
 
 writeFileSync(join(outDir, 'latest-analysis.json'), JSON.stringify(result, null, 2));
+// keep the two handoff files in step with the fresh analysis
+const digest = buildAiDigest(report, { analysis: result, baselineFailures: report.guards?.baselineFailures ?? [] });
+writeFileSync(join(outDir, 'latest-chatgpt.json'), JSON.stringify(digest, null, 2));
+writeFileSync(join(outDir, 'latest-chatgpt.md'), renderAiDigestMarkdown(digest));
 if (report.verdict !== 'PASS') {
-  writeFileSync(join(outDir, 'latest-fix-prompt.md'), renderFixPrompt(report, { analysis: result }));
+  const args = { analysis: result };
+  writeFileSync(join(outDir, 'latest-arena-task.md'), renderArenaTask(report, args));
+  writeFileSync(join(outDir, 'latest-fix-prompt.md'), renderFixPrompt(report, args));
+} else {
+  rmSync(join(outDir, 'latest-arena-task.md'), { force: true });
+  rmSync(join(outDir, 'latest-fix-prompt.md'), { force: true });
 }
 
 console.log(`\nKategorie: ${result.final.category} (Konfidenz ${result.final.confidence}, Quelle: ${result.final.source})`);
@@ -66,6 +78,9 @@ if (result.ai) console.log(`Modell:    ${result.ai.modelId} (Rolle review)`);
 else if (result.aiError) console.log(`Hinweis:   lokale KI nicht verfügbar — ${result.aiError}`);
 else if (result.aiSkipReason) console.log(`Hinweis:   KI nicht nötig — ${result.aiSkipReason}`);
 console.log(
-  `\nGeschrieben: ${join(outDir, 'latest-analysis.json')}${report.verdict === 'PASS' ? '' : `, ${join(outDir, 'latest-fix-prompt.md')}`}`,
+  `\nGeschrieben: ${join(outDir, 'latest-analysis.json')}, ${join(outDir, 'latest-chatgpt.json')}` +
+    (report.verdict === 'PASS'
+      ? ' (PASS: kein Reparaturauftrag)'
+      : `, ${join(outDir, 'latest-arena-task.md')}, ${join(outDir, 'latest-fix-prompt.md')}`),
 );
 if (flag('json')) console.log(JSON.stringify(result, null, 2));

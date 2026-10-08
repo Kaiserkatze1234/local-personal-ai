@@ -1,353 +1,383 @@
-# Full Autonomous Development Loop Report
+# Full Autonomous AI Development Loop — Abschlussbericht
 
-**Projekt:** `local-personal-ai` · **Branch:** `arena/e0389ad4-local-personal-ai`
-**Stand:** 2026-10-08 · **Basis-Commit:** `4a477bb` (Projektstand unabhaengig vom Loop)
+Stand: 2026-10-08 · Branch `arena/e0389ad4-local-personal-ai` · Commit-Basis `f9e3c61`
 
-Dieser Bericht beschreibt den gebauten Kreislauf
-
-```
-Arena  →  Code-Aenderung  →  GitHub  →  Windows-PC  →  Testlauf  →  Report
-      ↑                                                                  ↓
-      └──────────────  Rueckkanal (Check, PR-Kommentar, Auftrag)  ←───────┘
-```
-
-und trennt sauber, was **hier verifiziert** wurde und was **auf dem
-Windows-Runner noch nicht gelaufen ist** (Abschnitt 11 – keine Scheinaussage).
+Dieser Bericht beschreibt den vollständigen Kreislauf
+**Nutzer → ChatGPT → Arena → GitHub → Windows-Testrechner → Tests → Testbericht
+→ ChatGPT → neuer Arena-Auftrag → Arena repariert → GitHub → erneut testen**
+und benennt exakt, was davon automatisch läuft, was einmalig eingerichtet werden
+muss und was heute technisch **nicht** automatisch geht (mit Begründung, ohne
+erfundene Schnittstellen).
 
 ---
 
 ## 1. Architektur
 
-Kleinste sinnvolle Aufteilung: **ein** Einstiegspunkt, **ein** Reportformat,
-**eine** Sicherheitsentscheidung. Alles laeuft auf dem vorhandenen Node-Stack
-(keine neuen Laufzeitabhaengigkeiten ausser `@playwright/test` als devDependency).
+```
+            ┌──────────────────────────────────────────────────────────────┐
+ Nutzer ───▶│ ChatGPT                                                      │
+            │  • formuliert Entwicklungsziele als Arena-Auftrag            │
+            │  • liest den Testlauf-Digest (latest-chatgpt.json/.md)       │
+            │  • trennt Code- von Infrastrukturfehlern, entscheidet,       │
+            │    formuliert den nächsten Auftrag / Reparaturauftrag        │
+            └──────────────┬──────────────────────────────▲───────────────┘
+                           │ Auftrag (Text)               │ Digest (JSON/MD)
+                           ▼                              │
+            ┌──────────────────────────────┐              │
+            │ Arena (Agent)                │              │
+            │  • ändert Code, Tests, Docs  │              │
+            │  • pusht auf arena/**-Branch │              │
+            │  • liest Ergebnisse zurück    │              │
+            │    via npm run feedback:pull │              │
+            └──────────────┬───────────────┘              │
+                           │ git push                     │
+                           ▼                              │
+            ┌──────────────────────────────────────────────┴───────────────┐
+            │ GitHub (zentrale Übergabeschicht, KEINE externe DB)          │
+            │  • Branch + Commit + Pull Request #1                         │
+            │  • Actions-Workflows (push auf main/arena/**)                │
+            │  • Check-Runs/Annotations, strukturierter PR-Kommentar       │
+            │  • Artefakte lpai-ai-handoff / lpai-test-reports / e2e       │
+            │  • Issue-Eskalation `needs-human` bei gestoppter Automatik   │
+            └──────────────┬───────────────────────────────────────────────┘
+                           │ Job an den self-hosted Runner (Labels)
+                           ▼
+            ┌──────────────────────────────────────────────────────────────┐
+            │ Windows-Testrechner (Ryzen 5 5600H, 16 GB, lokales Ollama)   │
+            │  • Runner startet mit dem PC (Autostart, interaktive Sitzung)│
+            │  • npm ci → npm run test:autonomous -- --ci                  │
+            │      prereqs → native → typecheck → build → unit →           │
+            │      integration → smoke → Electron-E2E → Ollama-Live        │
+            │  • Fehleranalyse (Regeln zuerst, lokales Modell nur wenn     │
+            │    nötig — über den vorhandenen ModelRouter)                 │
+            │  • schreibt Report + Digest + Reparaturauftrag               │
+            │  • räumt auf (Electron-Prozesse, Temp-Datenordner)           │
+            └──────────────────────────────────────────────────────────────┘
+```
+
+Beide Pfeile zurück (Digest an ChatGPT, Auftrag an Arena) entstehen aus **einem**
+Report — es gibt keine zweite Wahrheit und keinen zweiten Testpfad.
+
+## 2. Automatisierungsgrad
+
+| Schritt | heute |
+| --- | --- |
+| Code ändern (Arena) | automatisch, sobald ein Auftrag vorliegt |
+| Änderung nach GitHub bringen | automatisch (`git push` auf `arena/**`) |
+| Änderungserkennung | automatisch (Workflow-Trigger `push` + Diff gegen den zuletzt getesteten Commit) |
+| Testlauf starten | automatisch auf dem Windows-PC |
+| Voraussetzungen prüfen | automatisch (Stufe `prereqs`, strikt mit `--ci`) |
+| Tests ausführen (inkl. echtem Electron + lokalem Modell) | automatisch |
+| Bericht erzeugen | automatisch (`latest.json/.md`) |
+| Maschinenlesbaren Digest für ChatGPT erzeugen | automatisch (`latest-chatgpt.json/.md`) |
+| Reparaturauftrag für Arena erzeugen | automatisch (`latest-arena-task.md`, nur bei Fehlschlag) |
+| Ergebnis nach GitHub zurückgeben | automatisch (Annotations, PR-Kommentar, Artefakte, Issue) |
+| Ergebnis in den Arbeitsbaum holen | automatisch per Befehl (`npm run feedback:pull`) |
+| Automatik begrenzen/stoppen | automatisch (Zyklus-Wächter, 6 Stop-Gründe) |
+| **Nächsten Auftrag formulieren** | **ChatGPT** (zentrale Instanz) — Übergabe ist ein Schritt |
+| **Neuen Arena-Agentenlauf starten** | **nicht automatisch möglich** (siehe §13) |
+
+Kurz: alles **innerhalb** des technischen Kreislaufs ist automatisch. Nicht
+automatisch sind genau zwei Übergaben — „ChatGPT bekommt den Digest“ und „Arena
+bekommt den Auftrag“ —, weil es dafür keine dokumentierte Schnittstelle gibt
+(kein erfundener Endpunkt, kein Fake-Trigger).
+
+## 3. GitHub
+
+`.github/workflows/autonomous-test.yml` — der eigentliche Kreislauf:
+
+* Trigger: `push` auf `main` und `arena/**`, plus `workflow_dispatch`
+  (`quick`, `require_ollama`, `max_attempts`).
+* Läuft auf `[self-hosted, Windows, X64, lpai-test]`, `timeout-minutes: 90`,
+  Concurrency-Gruppe pro Branch mit `cancel-in-progress`.
+* Job-Guard `if: github.repository == 'Kaiserkatze1234/local-personal-ai'`.
+* `actions/checkout@v7` mit `fetch-depth: 0` (Diff zum letzten getesteten Stand
+  gehört zur Analyse), `npm ci`, `npm run test:autonomous -- --ci`.
+* Zykluszustand wird über `actions/cache/restore@v6` / `save@v6` über Läufe
+  hinweg mitgenommen (`test-reports/cycle-state.json`).
+* Artefakte (v7): `lpai-ai-handoff` (Digest + Auftrag + Report), 
+  `lpai-test-reports` (Reports, State, Screenshots), `lpai-e2e-artifacts`
+  (Traces/Screenshots bei Fehlschlag, kürzere Aufbewahrung).
+* Ergebniskanäle: `::error::`/`::warning::`-Annotationen im Lauf, **ein**
+  strukturierter PR-Kommentar (Marker `<!-- lpai-autonomous-report -->`, wird
+  aktualisiert statt gespammt) mit Stufentabelle, fehlgeschlagenen Tests,
+  Analyse, Stop-Grund und dem kompakten Digest als eingeklappter Block,
+  Issue-Eskalation `needs-human` bei gestoppter Automatik, und am Ende ein
+  ehrlicher Job-Fehlschlag (kein „grün durchreichen“).
+
+`.github/workflows/pull-request-ci.yml` — Fork-sicher: `pull_request` nur auf
+GitHub-gehosteten Runnern (typecheck, lint, build, `npm test`).
+
+## 4. Windows
+
+* `scripts/windows/install-runner.ps1` (einmalig): prüft die Toolchain
+  (Node 22+, npm, git, Platz, optional Ollama), lädt den offiziellen Runner
+  **außerhalb** des Repos, registriert ihn mit den Labels
+  `self-hosted, Windows, X64, lpai-test`, richtet den **Autostart** ein
+  (Standard: geplante Aufgabe bei der Anmeldung → interaktive Sitzung, die die
+  GUI-/E2E-Stufen brauchen; optional Windows-Dienst, dann aber ohne verlässliche
+  GUI-Tests), startet ihn und prüft, dass GitHub ihn als online sieht.
+* `scripts/windows/remove-runner.ps1`: vollständiger Rückbau.
+* Nach der Einrichtung startet **jeder** Push den Testlauf; niemand startet
+  Tests von Hand, niemand kopiert Logs.
+* Ressourcen-Disziplin: E2E seriell (`workers: 1`), keine Retries, pro Lauf
+  höchstens ein Electron und höchstens ein Modell, `keepAlive: 0` nach der
+  Analyse, Aufräumen verwaister eigener `electron.exe`-Prozesse vor jeder
+  Electron-Stufe, Wegwerf-Datenordner unter `%TEMP%`.
+
+## 5. Tests
+
+Ein Einstiegspunkt, neun Stufen, ein Lauf:
 
 ```
-npm run test:autonomous  (scripts/autonomous-test.mjs)
-  │
-  ├─ prereqs      Node/npm/OS, node_modules, Node-ABI-Probe, Electron-Dist,
-  │               Playwright, Plattenplatz, Ollama-Erreichbarkeit
-  ├─ native       scripts/rebuild-native.mjs  (Electron-ABI-Binding, gecacht)
-  ├─ typecheck    tsc node + web
-  ├─ build        scripts/build.mjs + vite build
-  ├─ unit         ┐ EINE Vitest-Ausfuehrung, zwei Sichten
-  ├─ integration  ┘ (Dateien, die die echte CoreApp booten)
-  ├─ smoke        LPAI_SMOKE=1 Electron in Wegwerf-Datenordner (SMOKE_OK + Screenshot)
-  ├─ e2e          npx playwright test  (echtes Electron)
-  └─ ollama       tests/ollama-live.test.ts gegen den echten lokalen Server
-        │
-        ├─ test-reports/latest.json|.md (+ zeitgestempelte Kopien)
-        ├─ test-reports/latest-fix-prompt.md      (nur bei Fehlschlag)
-        ├─ test-reports/latest-analysis.json
-        └─ test-reports/cycle-state.json          (Runden + Fingerprints)
+prereqs → native → typecheck → build → unit → integration → smoke → e2e → ollama
 ```
 
-Statusmodell: `PASS` / `FAIL` / `SKIP` / `INFRASTRUCTURE_ERROR`, Gesamturteil
-`FAIL` > `INFRASTRUCTURE_ERROR` > `PASS`, Exitcodes 1 / 2 / 0.
-
-## 2. Aenderungen (Dateien)
-
-**Neu**
-
-| Datei | Zweck |
-| --- | --- |
-| `scripts/autonomous-test.mjs` | Orchestrator (9 Stufen, Reports, Analyse, Guards, GH-Ausgaben) |
-| `scripts/autonomous/report.mjs` | Report-Schema 1, Markdown, Reparaturauftrag, PR-Kommentar, Fingerprint |
-| `scripts/autonomous/guards.mjs` | Zykluszustand, Stop-Regeln, gefaehrliche Aenderungen |
-| `scripts/lib/ensure-bundle.mjs` | esbuild-Helfer (TS-Logik headless als `.mjs` ausfuehren, wie `scripts/bench.mjs`) |
-| `scripts/analyze-failure.mjs` | CLI: Analyse eines fertigen Reports wiederholen |
-| `scripts/feedback-pull.mjs` | Rueckkanal: Report + Artefakte + PR-Kommentar von GitHub holen |
-| `scripts/windows/install-runner.ps1` | Einmalige Einrichtung des self-hosted Runners |
-| `scripts/windows/remove-runner.ps1` | vollstaendiger Rueckbau |
-| `src/main/diagnostics/failureAnalysis.ts` | Regeln + Prompt + Antwortvalidierung + Modellaufruf |
-| `tests/e2e/harness.ts` | Electron-Launch, Isolation, scripted Provider, Diagnose-Anhaenge |
-| `tests/e2e/startup.spec.ts`, `chat.spec.ts`, `memory-context.spec.ts`, `real-ollama.spec.ts` | 10 E2E-Szenarien |
-| `playwright.config.ts` | seriell, 1 Worker, Trace/Screenshot nur bei Fehlschlag |
-| `tests/autonomy.test.ts` | 29 Tests fuer Report, Guards, Analyse, Verdrahtung |
-| `tests/e2e-contract.test.ts` | 5 Tests: IPC-Allowlist, Selektoren, Config-Schema, ps1-ASCII |
-| `.github/workflows/autonomous-test.yml` | Push → self-hosted Windows-Runner → Artefakte, Kommentar, Eskalation |
-| `.github/workflows/pull-request-ci.yml` | Fork-sichere Schnellpruefung auf GitHub-Runnern |
-| `docs/AUTONOMOUS_LOOP.md` | Betriebshandbuch + die exakten einmaligen Schritte |
-
-**Geaendert**
-
-| Datei | Aenderung |
-| --- | --- |
-| `package.json` | Scripts `test:autonomous`, `test:e2e`, `analyze:failure`, `feedback:pull`; devDependency `@playwright/test` |
-| `src/main/index.ts` | Electron-`userData` folgt `LPAI_DATA_DIR` → Tests isolieren auch Fensterzustand und Single-Instance-Lock |
-| `scripts/native-swap.mjs` | **echter Bugfix** (siehe unten) |
-| `tests/native-swap.test.ts` | zwei Regressionstests fuer genau diesen Bug (7 Tests gesamt) |
-| `tsconfig.node.json` | `allowJs` — die Specs/Tests duerfen die `.mjs`-Loop-Module typisiert importieren |
-| `.gitignore` | `test-reports/*` (Reports reisen als CI-Artefakt, nicht im Git) |
-| `README.md` | Abschnitt „Automated test loop“ |
-
-### Gefundener und behobener Fehler (Regression)
-
-Beim ersten echten Durchlauf des Loops brach die Stufe `native` **und** die
-komplette Testsuite zusammen: `better-sqlite3` war aus `node_modules`
-verschwunden. Ursache war ein realer Fehler in `scripts/native-swap.mjs`:
-Wenn der Producer (node-gyp/\@electron/rebuild) zuerst `build/Release`
-**loescht** und danach scheitert, kopierte das `finally` das Sicherungsfile in
-ein nicht mehr existierendes Verzeichnis → `ENOENT` aus dem `finally`, das
-Paket blieb **ohne Node-Bindung** zurueck, das Backup lag verwaist herum.
-
-Behoben durch:
-* `mkdirSync(dirname(pkgBin), { recursive: true })` vor der Wiederherstellung,
-* Byte-Vergleich (SHA) nach dem Restore statt stillem Vertrauen,
-* **kein** `throw` mehr im `finally` (haette den Producer-Fehler maskiert),
- sondern gemerkter Fehler nach dem Block,
-* zwei neue Regressionstests: „Producer loescht `build/Release` und scheitert“
- und „Restore muss die Originalbytes reproduzieren“.
-
-Damit ist der Fall im Loop selbst zu Ende getestet — der erste Lauf hat einen
-echten Defekt gefunden, der Loop hat ihn sichtbar gemacht, der Fix ist durch
-einen Test abgesichert.
-
-## 3. Wiederverwendete Komponenten (nichts neu erfunden)
-
-* **`CoreApp`** (`src/main/app.ts`) — headless bootbar; die Analyse nutzt genau
-  den App-Container, keine Parallelwelt.
-* **ModelRouter + ModelRoleService + Capability-System + ResourceManager** —
-  Modellwahl fuer die Fehleranalyse laeuft ueber `router.select('review',
-  'classification', { preferSmall: true })`. Die Rollenanforderung
-  `text_generation` schliesst Embedding-only-Modelle strukturell aus; es gibt
-  **keinen** neuen Ollama-Client, kein neues Routing, keine Cloud, keine
-  hartkodierten Modellnamen.
-* **Provider-/Adapter-Abstraktion** (`ollama`, `openai_compat`, `mock`) — die
-  E2E-Szenarien sprechen ueber `LPAI_OPENAI_BASE_URL` mit einem geskripteten
-  Endpunkt; die App bleibt echt (Adapter, Router, ContextEngine, Renderer).
-* **`scripts/rebuild-native.mjs` / `native-swap.mjs`** — die Native-Stufe ruft
-  das vorhandene Skript, statt ABI-Logik zu duplizieren.
-* **Smoke-Vertrag** (`LPAI_SMOKE=1` → `<dataDir>/smoke-result.txt` +
-  `smoke-window.png`) — unveraendert wiederverwendet.
-* **`tests/helpers.ts`, `MockProvider`, `tests/ollama-live.test.ts`** — die
-  bestehende Testinfrastruktur; Unit/Integration sind **ein** Vitest-Lauf.
-* **`scripts/bench.mjs` + `scripts/lib/ensure-bundle.mjs`-Muster** — dieselbe
-  Technik (TS mit esbuild headless ausfuehren) fuer `failureAnalysis.ts`.
-* **`docs/MASTER_SPECIFICATION.txt`-Sprache** — Statusvokabular
-  (`PASS/FAIL/SKIP/INFRASTRUCTURE_ERROR`, ehrliche Fehlermeldungen) und
-  Style-Regeln des Repos bleiben erhalten; `npm run lint` (biome) 0/0.
-
-## 4. Automatisierung
-
-* **Ausloeser:** `push` auf `main` und `arena/**`, plus manueller Dispatch
-  (Eingaben `quick`, `require_ollama`, `max_attempts`). Bewusst **kein**
-  `pull_request` fuer den self-hosted Job (Sicherheit, Abschnitt 9).
-* **Ablauf pro Push:** Checkout des exakten Commits → Cache-Restore des
-  Zykluszustands → `npm ci` → `npm run test:autonomous -- --ci …` →
-  Artefakt-Upload → PR-Kommentar → ggf. Issue `needs-human` → Job-Fehler bei
-  rotem Lauf.
-* **GitHub-Ausgaben des Orchestrators:** `GITHUB_STEP_SUMMARY` (Kommentar +
-  Markdown), `GITHUB_OUTPUT` (`verdict`, `exit_code`, `stop`, `stop_reasons`,
-  `report_id`, `ollama_reachable`, `duration_s`), `::error::`/`::warning::`
-  Annotationen je Stufe.
-* **Artefakte:** `lpai-test-reports` (immer, 14 Tage) und `lpai-e2e-artifacts`
-  (bei Fehlschlag, 7 Tage) inklusive Screenshots und Playwright-Traces.
-* **Rueckkanal in den Arbeitsbaum:** `npm run feedback:pull` holt den letzten
-  Lauf (Report, Fix-Prompt, Zykluszustand, PR-Kommentar) nach
-  `test-reports/inbox/` und schreibt `BRIEF.md`.
-
-## 5. E2E
-
-`playwright.config.ts` + `tests/e2e/` — echtes Electron ueber `_electron.launch`:
-
-| Szenario | Prueft |
-| --- | --- |
-| Start/Bridge/IPC | Fenster da, Renderer geladen, `window.lpai.invoke`/`onEvent`/`getPathForFile`, `app.info` gegen den Temp-Datenordner, `conversations.list`, unbekannte Methode wird blockiert |
-| Sauberes Ende | Fenster schliessen → Prozess endet mit Exitcode 0 (Polling, kein `sleep`) |
-| Chat | Antwort exakt wie vom Modell geliefert, Request enthaelt den Prompt, keine internen Marker in der Antwort, Turn in der DB |
-| Streaming | Zwischenstand ist **echtes Praefix**, Endstand exakt (kein „alles auf einmal“) |
-| Stop | Abbruch friert den Text ein, Send-Button kehrt zurueck, Text nach Stop unveraendert |
-| Provider-Fehler | ehrlicher Hinweis (`.notice`) statt erfundener Antwort |
-| Memory | „remember that …“ landet in der DB, taucht im naechsten gesendeten Prompt auf, **ueberlebt den Neustart** |
-| Kontext | Verlauf im selben Gespraech im Request, in einem **neuen** Gespraech nicht |
-| Relevanz | passende Memory steht vor der unpassenden im injizierten Block |
-| Echtes Ollama | Antwort eines echten Modells, keine internen Marker, plausible Zeit — **skip mit Begruendung**, wenn kein Server antwortet |
-
-Deterministik: ein winziger OpenAI-kompatibler Endpunkt (`ScriptedProvider`)
-liefert geskriptete Antworten und **protokolliert die Requests** — Aussagen
-ueber Kontext/Memory werden am tatsaechlich gesendeten Prompt geprueft, nicht
-aus der Antwort geraten. Keine `sleep`-Ketten, keine Test-Hooks im Produktcode,
-kein Produktivdaten-Verzeichnis: jeder Lauf bekommt `LPAI_DATA_DIR` unter
-`%TEMP%`.
+* `unit`/`integration`: **eine** Vitest-Ausführung, zwei Sichten (Dateien, die
+  die echte `CoreApp` booten = Integration).
+* `smoke`: `LPAI_SMOKE=1` in einem Wegwerf-Datenordner, Erfolg nur bei
+  `SMOKE_OK`.
+* `e2e`: Playwright `_electron` gegen die gebaute App — 17 Szenarien in 5
+  Dateien: App-Start, Fenster, Renderer, Preload-Bridge, IPC (inkl. blockierter
+  Methode), Chat, Antwort, Streaming, Stop/Abbruch, Provider-Fehler, „Hallo“,
+  Frage nach den Arbeitsbedingungen, Memory schreiben/abrufen/überleben,
+  „Merke dir: Ich mag kurze Antworten.“ → „Welche Art von Antworten mag ich?“,
+  historische Konversation (auch nach Neustart auffindbar), „Was habe ich noch
+  offen?“ (Task-Records), Crash-Recovery (`paused`), „Erkläre mir Quantenphysik.“
+  ohne persönliche Kontextliste, sauberer Shutdown.
+* `ollama`: echte Live-Tests gegen den lokalen Server, Chat-Modelle per
+  Capability, Embedding-Modelle ausgeschlossen.
+* Statusmodell: `PASS` / `FAIL` / `SKIP` / `INFRASTRUCTURE_ERROR`; fehlendes
+  Ollama ist **nie** PASS, fehlende Electron-Distribution ist
+  `INFRASTRUCTURE_ERROR` (nicht SKIP, nicht PASS), ein Live-Lauf ohne einen
+  einzigen Test ist FAIL, ein „grüner“ Smoke-Lauf ohne `SMOKE_OK` ist FAIL.
 
 ## 6. Fehleranalyse
 
-1. **Deterministisch zuerst** — Regelkategorien (`infrastructure`,
-   `runtime_provider`, `build_defect`, `test_defect`, `ui_defect`,
-   `regression`, `code_defect`, `preexisting_unrelated`, `unknown`) inkl.
-   Vergleich mit den bekannten Vorab-Fehlern aus `cycle-state.json`.
-2. **Nur bei einem Fehler** und nur wenn die Regeln nicht eindeutig sind, wird
-   das lokale Modell gefragt (Rolle `review`, `classification`, `preferSmall`,
-   `temperature 0`, Timeout 150 s, Prompt ≤ 6000 Zeichen, `maxPromptChars`). Der
-   Prompt enthaelt ausschliesslich Diagnose-Relevantes: fehlgeschlagene Stufe,
-   Fehlerzeilen (gekuerzt), erwartet vs. beobachtet, `git diff --stat` + Auszug,
-   Artefaktpfade — **nie** das Repository.
-3. **Antwort** wird als JSON validiert (`category`, `probableCause`, `component`,
-   `file`, `observation`, `recommendedFix`, `confidence`); eine eindeutige
-   Infrastruktur-/Runtime-Diagnose darf nicht in einen Codefehler umgedeutet
-   werden. Ohne Modell bleibt der Lauf voll funktionsfaehig (Regeln +
-   Reparaturauftrag).
-4. **Ergebnis** landet in `latest-analysis.json`, im Report und im
-   Reparaturauftrag.
+1. Immer zuerst **deterministisch** (Regeln in
+   `src/main/diagnostics/failureAnalysis.ts`): Infrastruktur-, Provider-,
+   Build-, UI- und Regressionsmuster.
+2. Nur bei einem Fehler und nur wenn die Regelantwort nicht eindeutig ist
+   (Konfidenz < 0,75 oder `unknown`), kommt das **lokale Modell** über die
+   **vorhandene** Infrastruktur dazu: `CoreApp` → `providers.refreshAll()` →
+   `ModelRouter.select('review', 'classification', { preferSmall: true })` →
+   Adapter des gewählten Providers. Kein neuer Ollama-Client, kein neues
+   Routing, keine Cloud, keine fest verdrahteten Modellnamen; ein
+   Embedding-Modell kann strukturell nicht gewählt werden.
+3. Der Prompt ist begrenzt (≤ 6000 Zeichen, 150 s Timeout) und enthält nur
+   Diagnosematerial (fehlgeschlagene Stufe/Tests, Erwartung vs. Beobachtung,
+   `git diff --stat` + Auszug, Artefaktpfade) — **nie** das Repository.
+4. Ergebnis: `{category, probableCause, component, file, observation,
+   recommendedFix, confidence}` mit Herkunft (`heuristic` / `heuristic+ai`).
+   Kategorien: `code_defect`, `regression`, `test_defect`, `build_defect`,
+   `ui_defect`, `infrastructure`, `runtime_provider`, `preexisting_unrelated`,
+   `unknown`. Ein eindeutig als Umgebung erkannter Fehler erreicht das Modell
+   gar nicht mehr und kann nicht zu einem Codefehler umgedeutet werden.
+5. Ohne lokales Modell bleibt der Lauf voll funktionsfähig; der Digest nennt
+   dann `classification.source: "rules"` und sagt ehrlich, dass keine KI nötig
+   war.
 
-Verifiziert in diesem Lauf: fehlende Electron-Distribution/kein Display wurde
-als `infrastructure` (Konfidenz 0.8, Quelle `heuristic`) erkannt, und die
-Analyse hat den Modellaufruf **bewusst ausgelassen** („deterministic evidence is
-decisive“).
+## 7. ChatGPT-Lesepfad (was ChatGPT bekommt)
 
-## 7. Arena-Rueckkanal
+Ein Lauf erzeugt **einen** Digest, aus dem dieselbe Instanz ohne Rückfragen
+entscheiden kann:
 
-Automatisch, ohne Copy-Paste:
-
-1. Check-Annotationen je fehlgeschlagener Stufe (erste echte Fehlerzeile).
-2. Strukturierter PR-Kommentar (Marker `<!-- lpai-autonomous-report -->`, wird
-   aktualisiert, nicht gespammt) mit Stufentabelle, fehlgeschlagenen Tests,
-   Analyse, Stop-Grund und Umgebungs-Warnung.
-3. Artefakt `lpai-test-reports` mit `latest.json|.md`,
-   `latest-fix-prompt.md`, `latest-analysis.json`, `cycle-state.json`,
-   Screenshots und Traces — ueber die offizielle API abrufbar.
-4. `npm run feedback:pull` materialisiert den Lauf im Arbeitsbaum
-   (`test-reports/inbox/BRIEF.md`, `pr-comment.md`, `artifacts/**`) und druckt
-   den Auftrag.
-5. Testlauf aus der Entwicklungsumgebung heraus startbar ueber die offizielle
-   Workflow-API (`gh workflow run`) bzw. `repository_dispatch`.
-
-**Verbleibende Grenze (ehrlich):** GitHub kann keinen **neuen Arena-Agentenlauf**
-starten — dafuer existiert keine oeffentliche, dokumentierte Arena-Schnittstelle
-und es wird keine erfunden. Der Kreislauf ist automatisch bis zum fertigen,
-maschinenlesbaren Auftrag; der letzte Anstoss („jetzt reparieren“) ist der
-einzige verbleibende manuelle Moment und im Abschnitt 11 benannt.
-
-## 8. Reparaturzyklus
-
-Ein Zyklus ist eine Folge roter Runden ueber Fix-Commits hinweg; ein `PASS`
-setzt Zaehler und Fingerprints zurueck und merkt sich den letzten guten Commit.
-`cycle-state.json` wird im Workflow gecacht und ueberlebt so den Lauf.
-
-Stop-Regeln (alle als Unit-Tests abgesichert):
-
-| Grund | Bedingung |
+| Frage | Feld in `test-reports/latest-chatgpt.json` |
 | --- | --- |
-| `max_attempts_reached` | mehr als `max_attempts` Runden (Standard 3) |
-| `repeated_failure` | identischer Fingerprint ≥ 3× |
-| `infrastructure_error` | eine Stufe `INFRASTRUCTURE_ERROR` |
-| `ollama_unavailable` | `--require-ollama` und kein Server |
-| `tests_regressed` | neue rote Stufen gegenueber der Vorrunde |
-| `dangerous_change` | ab Runde 2 Aenderungen an Workflows/Autonomie-/Runner-Skripten/Playwright-Config |
+| Was wurde getestet? | `whatWasTested{pipeline,branch,commit,runner,os,node,durationMs,stages,ollama,changedFiles,previousTestedSha}` |
+| Was funktioniert? | `works[]` |
+| Was ist kaputt? | `broken[]` und `failures[]{stage,status,command,expected,actual,failedTests,stacktrace,logs,screenshot,trace,affectedFiles,probableCause,environmentProblem}` |
+| Code- oder Infrastrukturfehler? | `isCodeDefect`, `isInfrastructureError`, `classification{category,categoryLabel,source,component,file}`, `infrastructureErrors[]` |
+| Welche Dateien sind relevant? | `affectedFiles[]`, `classification.file` |
+| Was hat sich seit dem letzten Lauf geändert? | `whatWasTested.changedFiles[]`, `previousTestedSha` |
+| Regression? | `regression{isRegression,repeatedFailure,progress,newFailures,fixedSinceLastRun,alreadyBrokenBefore,attempt,maxAttempts,stopped,stopReasons}` |
+| Wie reproduzieren? | `reproduce{clone,commit,steps,stageCommands,note}` |
+| Empfohlene Korrektur? | `recommendedFix`, `likelyRootCause`, `confidence` |
+| Welche Tests müssen danach grün sein? | `testsToRerun{stages,failedTests,command,mustStayGreen}` |
 
-Bei einem Stop: keine automatische Weiterarbeit, Warnung im Lauf, optional
-Issue `needs-human`, Grund im Report und im Reparaturauftrag. Reparaturauftraege
-verlangen fuer echte Fehler einen Reproduktionstest; bestehende Tests duerfen
-nicht rot werden, kein „gruen durch Anpassen“.
+Dazu `latest-chatgpt.md` als kurzer Text („Was getestet / Was läuft / Was ist
+kaputt / Einordnung / Empfehlung“) und derselbe Text als eingeklappter Block im
+PR-Kommentar. Kein Rohlog, keine Repository-Dumps, keine persönlichen Daten;
+Listen sind begrenzt (Digest < ~20 kB, Kommentarblock ≤ 6 kB).
 
-## 9. Sicherheit
+Lesewege, in dieser Reihenfolge praktikabel:
 
-* Der self-hosted Job laeuft **nur** auf Push in dieses Repository und nur mit
-  `if: github.repository == 'Kaiserkatze1234/local-personal-ai'`.
-* **Kein** `pull_request`/`pull_request_target` fuer self-hosted; Fork-PRs
-  laufen auf GitHub-Runnern (`pull-request-ci.yml`, nur typecheck/lint/build/unit).
-* Keine Secrets im Job; der Token darf nur PR-Kommentar/Issue schreiben.
-* Wegwerf-`LPAI_DATA_DIR` je Testprozess — `%APPDATA%\lpai` wird nie beruehrt;
-  die Analyse arbeitet auf einer **Kopie** von `config.json`/`lpai.db`.
-* Vor Electron-Stufen werden ausschliesslich eigene verwaiste `electron.exe`
-  (unter `node_modules\electron`) beendet.
-* Alle Kindprozesse werden ueber Prozessgruppen beendet (`taskkill /T` auf
-  Windows), Tests laufen seriell (`workers: 1`), `retries: 0` — ein Retry darf
-  einen echten Fehler nicht verstecken.
-* Die PowerShell-Skripte sind ASCII-only (Windows PowerShell 5.1 liest `.ps1`
-  sonst als ANSI) — per Test erzwungen, ebenso dass jeder benutzte `[switch]`
-  auch deklariert ist.
+1. **PR-Kommentar** (`pull/1#issuecomment-…`): öffentlich lesbar, enthält
+   Stufentabelle, Fehler, Analyse und den Digest — funktioniert für eine
+   Analyseinstanz mit Lesezugriff auf das Repository, ohne Token.
+2. **Artefakt `lpai-ai-handoff`** (per GitHub-API mit Token): die Dateien
+   selbst, inklusive `latest-arena-task.md`.
+3. **`npm run feedback:pull`** (in Arena/auf dem Entwicklungsrechner):
+   holt beides in `test-reports/inbox/`, legt `BRIEF.md`, `ARENA-TASK.md` und
+   `pr-comment.md` an und druckt die Zusammenfassung.
 
-## 10. Ergebnisse
+## 8. Arena-Auftragspfad (was Arena bekommt)
 
-| Bereich | Ergebnis | Umgebung |
-| --- | --- | --- |
-| `npm run lint` (biome) | **0 Fehler, 0 Warnungen, 0 Hinweise** (144 Dateien) | Linux-Sandbox |
-| `npm run typecheck` | **PASS** (`tsc` node + web) | Linux-Sandbox |
-| `npm run build` | **PASS** (main, preload, renderer) | Linux-Sandbox |
-| `npm test` | **186 passed**, 10 skipped, 1 Datei übersprungen (ffmpeg), 18,2 s | Linux-Sandbox |
-| `test:autonomous` — `unit` | **PASS** 12 Dateien, 103 Tests | Linux-Sandbox |
-| `test:autonomous` — `integration` | **PASS** 13 Dateien, 83 Tests | Linux-Sandbox |
-| `test:autonomous` — `prereqs`/`native`/`typecheck`/`build` | **PASS** | Linux-Sandbox |
-| `test:autonomous` — `smoke` | **INFRASTRUCTURE_ERROR** | kein Electron-Dist/Display in der Sandbox |
-| `test:autonomous` — `e2e` | **INFRASTRUCTURE_ERROR** | kein Electron-Dist/Display in der Sandbox |
-| `test:autonomous` — `ollama` | **SKIP** (nie PASS) | kein lokaler Ollama-Server |
-| `test:autonomous` — Gesamt | **INFRASTRUCTURE_ERROR**, Zyklus korrekt gestoppt | Linux-Sandbox |
-| `test:autonomous --quick` | **PASS** (smoke/e2e/ollama bewusst SKIP) | Linux-Sandbox |
-| `npm run analyze:failure` | **PASS** — `infrastructure`, KI bewusst nicht aufgerufen | Linux-Sandbox |
-| `npm run feedback:pull` | **PASS** — korrekter Branch erkannt, sauberer „noch kein Lauf“-Exit (3) | Linux-Sandbox |
-| `npx playwright test --list` | **10 Tests in 4 Dateien** korrekt eingesammelt | Linux-Sandbox |
-| **GitHub PR-Checks** (`pull-request-ci.yml`) | **PASS** — Typecheck, Lint, Build, Unit + Integration auf einem frischen Ubuntu-Runner | GitHub Actions, Lauf `37779636957` (PR #1) |
-| **Self-hosted Lauf** (`autonomous-test.yml`) | **in der Warteschlange** — wartet auf den noch nicht installierten Windows-Runner; startet automatisch danach | GitHub Actions |
+Bei jedem Nicht-PASS entsteht `test-reports/latest-arena-task.md` — direkt als
+Arbeitsauftrag verwendbar:
 
-Selbsttests des Loops: 29 Tests `tests/autonomy.test.ts` + 5 Tests
-`tests/e2e-contract.test.ts` — **alle gruen** (im `npm test`-Lauf enthalten).
+Problem · Reproduktion (Runner, Commit, Clone-Befehl, exakt die Befehle der
+roten Stufen, falls nötig `npm ci` und `npm run rebuild:native`) · Expected ·
+Actual (pro Stufe, mit Exitcode und erster Fehlerzeile) · betroffene Tests ·
+relevante Dateien (aus Analyse, Fehlerzeilen und geänderten Dateien) ·
+relevante Logs (gefiltert, begrenzt) · Trace/Screenshot (Pfade mit
+`show-trace`-Hinweis) · wahrscheinliche Ursache (Kategorie, Konfidenz, Quelle,
+Modell) · gewünschtes Verhalten · Einschränkungen (keine neuen Abhängigkeiten
+ohne Not, bestehende Funktionen nicht beschädigen, Loop-Dateien nur bei Bedarf)
+· Regressionstest-Anforderung (echter Codefehler ⇒ roter Test vorher, grüner
+nachher; kein Test wird abgeschwächt) · Loop-Status (Runde x/y, Fingerprint,
+Stop-Grund).
 
-## 11. Manuelle Schritte
+Bei `PASS` werden Auftragsdateien **gelöscht** — ein alter Auftrag kann nie für
+den aktuellen Zustand gehalten werden.
 
-**Einmalig (danach kein Handgriff mehr):**
+## 9. Reparaturschleife
 
-1. Node 22 auf dem Windows-PC (falls noch nicht vorhanden).
-2. `git clone https://github.com/Kaiserkatze1234/local-personal-ai`
-   (oder vorhandene Kopie nutzen).
-3. `powershell -ExecutionPolicy Bypass -File scripts\windows\install-runner.ps1`
-   — prueft die Toolchain, laedt den offiziellen Runner, registriert ihn mit den
-   Labels `self-hosted, Windows, X64, lpai-test`, richtet den Autostart ein
-   (Standard: geplante Aufgabe bei der Anmeldung; `-Mode Service` nur, wenn
-   GUI-Tests verzichtbar sind) und verifiziert die Online-Anzeige.
-4. Einmal `npm ci` + `npm run rebuild:native` (waermt Bindings vor).
+```
+FAIL → Analyse → Digest + Reparaturauftrag → Arena ändert Code + Regressionstest
+     → Push → Windows-Runner testet erneut → …
+```
 
-Optional, wenn Ollama ohne Modell installiert ist: `ollama pull qwen3:4b`.
+Der Zyklus ist über `test-reports/cycle-state.json` und die zeitgestempelten
+Reports in Git nachvollziehbar (Runde, Fingerprint, letzter grüner Commit,
+Stop-Gründe) und wird hart begrenzt:
 
-Der Push dieses Branches hat die beiden self-hosted-Laeufe bereits ausgeloest;
-sie warten in der Warteschlange auf den noch nicht installierten Runner und
-laufen nach dessen Installation von selbst (oder werden in der
-Actions-Uebersicht storniert).
+| Stop-Grund | Bedingung |
+| --- | --- |
+| `max_attempts_reached` | mehr als `--max-attempts` (Standard 3) Runden für dieselbe Änderung |
+| `repeated_failure` | derselbe Fehler-Fingerprint ≥ 3 Mal |
+| `infrastructure_error` | eine Stufe ist `INFRASTRUCTURE_ERROR` |
+| `ollama_unavailable` | `--require-ollama`, aber kein Server antwortet |
+| `tests_regressed` | zusätzliche rote Stufen oder gewachsene Fehlermenge |
+| `dangerous_change` | Änderung an Workflows/Autonomie-/Runner-Skripten/Playwright-Konfiguration ab Runde 2 |
+| `unknown_cause` | Analyse liefert keine belastbare Ursache (Konfidenz ≤ 0,1) |
 
-**Pro Durchlauf: keiner.** Push → Testlauf → Report → Kommentar → Artefakt.
-Der **einzige verbleibende** manuelle Moment im gesamten Kreislauf ist der
-Start der naechsten Reparaturrunde (Abschnitt 12).
+Bei einem Stop passiert **nichts** automatisch weiter: Der Report erklärt den
+Grund, der PR-Kommentar markiert ihn, der Workflow kann ein
+`needs-human`-Issue eröffnen. Ist die Schleife also voll automatisch? Innerhalb
+der Grenzen ja: Ein roter Lauf führt reproduzierbar zu Analyse, Digest und
+Auftrag, und ein Fix wird erneut automatisch getestet. Die **Entscheidung**
+„jetzt reparieren“ und die Formulierung des Auftrags bleiben bei ChatGPT, der
+Anstoß bei der Person — bewusst, nicht aus Bequemlichkeit (§13).
 
-## 12. Verbleibende Einschraenkungen
+## 10. Sicherheit
 
-1. **Kein automatischer Start eines Arena-Laufs.** Es gibt keine oeffentliche
-   Arena-Schnittstelle, die ein GitHub-Ereignis in einen neuen Agentenlauf
-   umsetzen koennte. Deshalb endet die Automatik beim fertigen, strukturierten
-   Auftrag (`latest-fix-prompt.md`, PR-Kommentar, Artefakt,
-   `feedback:pull` → `BRIEF.md`). Alles andere — Erkennung, Klassifikation,
-   Auftragsformulierung, Sicherheitsstopps, Rueckweg nach GitHub — ist
-   automatisiert. Ein Platzhalter-Endpunkt oder ein „Fake-Trigger“ wurde bewusst
-   **nicht** gebaut.
-2. **Smoke/E2E/Ollama sind auf dem Windows-Runner noch nicht gelaufen** — die
-   beiden ausgeloesten Laeufe stehen in der Warteschlange, bis
-   `install-runner.ps1` gelaufen ist. Verifiziert ist bisher: die
-   GitHub-gehosteten PR-Checks (Typecheck/Lint/Build/Tests) und alle
-   Sandbox-Stufen (Abschnitt 10). Die
-   Stufen sind implementiert und werden hier korrekt als
-   `INFRASTRUCTURE_ERROR`/`SKIP` gemeldet (erste Amtshandlung des Loops:
-   Umgebung, nicht Code), aber ihre Gruen-Meldung kann erst nach der
-   Runner-Installation und dem ersten Push belegt werden. Der Bericht behauptet
-   sie deshalb **nicht**.
-3. **GUI-E2E braucht eine interaktive Sitzung** — der Runner laeuft als
-   geplante Aufgabe bei der Anmeldung. Im Dienstmodus (Session 0) kann Electron
-   kein Fenster oeffnen; das Skript sagt das und die Stufe meldet dann
-   `INFRASTRUCTURE_ERROR` statt falsch-gruen.
-4. **Rundenbegrenzung** ist eine Sicherheitseigenschaft, keine Luecke: nach
-   `max_attempts` bzw. bei gleichem Fehler wird bewusst gestoppt und eskaliert.
-5. **`test-reports/` liegt nicht im Git** (Reports reisen als Artefakt). Soll
-   ein Report dauerhaft im Repository stehen, muss er bewusst committet werden.
+* Der self-hosted Runner nimmt **nur Jobs dieses Repositories** an; **keine**
+  `pull_request`/`pull_request_target`-Trigger für den self-hosted-Job. Fork-PRs
+  laufen ausschließlich auf GitHub-Runnern. Ein Fork kann damit keinen Code auf
+  dem PC ausführen.
+* Keine Secrets im Job; der Standard-Token darf nur PR-Kommentar und Issue
+  schreiben. Kein `contents: write`, keine Releases, kein `dist`-Build.
+* Testisolation: jeder Testprozess bekommt einen Wegwerf-Datenordner
+  (`LPAI_DATA_DIR`), Electron-`userData` folgt ihm, die Produktivdaten
+  (`%APPDATA%\lpai`) werden nie gelesen oder geschrieben; die Analyse arbeitet
+  auf einer **Kopie** der Konfiguration/DB.
+* Kein Blindflug: der Runner führt nur aus, was im Repo liegt und gepusht wurde
+  (trusted branches), und die Automatik stoppt bei Änderungen an der
+  Testinfrastruktur selbst.
+* Ressourcenschutz: ein Lauf gleichzeitig (Concurrency), E2E seriell, keine
+  parallelen großen Modelle, Modell wird nach der Analyse entladen.
+* Der Lauf startet nie die installierte App und veröffentlicht nichts.
 
-## 13. Fazit
+## 11. Dateien (Stand dieses Auftrags)
 
-Der Kreislauf ist **bis zum Reparaturauftrag vollstaendig automatisch**: Push →
-Windows-Testlauf → strukturierter Report → Fehlerklassifikation →
-GitHub-Check/-Kommentar/-Artefakt → Import in den Arbeitsbaum. Der Testlauf
-selbst startet ohne Handgriff, die Testumgebung ist gegen Produktivdaten
-isoliert, und der Loop faellt bei Umgebungsstoerungen bewusst nicht auf „gruen“
-zurueck.
+Neu/erweitert gegenüber der ersten Ausbaustufe:
 
-**Nicht** behauptet wird volle Automatik bis zum reparierenden Commit: dafuer
-fehlt die dokumentierte Arena-Schnittstelle fuer eingehende Trigger
-(Abschnitt 12.1). Diese Grenze ist exakt benannt — der maximale technisch
-moegliche Automatisierungsgrad ist implementiert.
+| Datei | Änderung |
+| --- | --- |
+| `scripts/autonomous/report.mjs` | `buildAiDigest`, `renderAiDigestMarkdown`, `renderArenaTask`, Kategorie-Labels; Report trägt `changedFiles`, `previousTestedSha`, `likelyRootCause`, `confidence`, `skippedTests`, `stageStatus` |
+| `scripts/autonomous-test.mjs` | schreibt Digest (`latest-chatgpt.json/.md`) und Auftrag (`latest-arena-task.md`), löscht Auftragsdateien bei PASS, Änderungserkennung inkl. Arbeitsbaum, Analyse liest den **aktuellen** Report, `unknown_cause`-Stop, `GITHUB_OUTPUT` um `ai_digest`/`is_code_defect` erweitert |
+| `scripts/autonomous/guards.mjs` | `tests_regressed` erkennt auch gewachsene Fehlermengen, `unknown_cause` |
+| `scripts/analyze-failure.mjs` | schreibt Digest + Auftrag mit (manuelles Nachziehen ohne Testwiederholung) |
+| `scripts/feedback-pull.mjs` | lädt zusätzlich `lpai-ai-handoff`, bevorzugt `latest-arena-task.md`, legt `ARENA-TASK.md` an |
+| `.github/workflows/autonomous-test.yml` | Artefakt `lpai-ai-handoff`, neue Reportdateien, Digest im PR-Kommentar |
+| `tests/e2e/*.spec.ts` | 17 Szenarien (u. a. Hallo, Arbeitsbedingungen, „Merke dir …“, Quantenphysik ohne persönlichen Kontext, offene Tasks, Crash-Recovery); `test.info()` statt ungültiger Fixture-Signatur |
+| `tests/e2e/tasks.spec.ts` | neu (Task-Records, Persistenz, Absturz-Erholung) |
+| `src/main/agent/agentCore.ts`, `planner.ts` | „Merke dir: …“ wird wie „remember that …“ erkannt (nur Präfix-Erkennung) |
+| `tests/autonomy.test.ts` | 37 Tests (vorher 29): Digest-Inhalte, Regression/Progress, Auftragsabschnitte, Größenbegrenzung, Veröffentlichung der Handoff-Artefakte |
+| `docs/AUTONOMOUS_LOOP.md` | ChatGPT-Lesepfad, Auftragspfad, Artefakte, Stop-Gründe, E2E-Szenariotabelle |
+| `README.md` | Kreislaufbild inkl. Digest/Auftrag und ChatGPT als zentrale Instanz |
+
+Unverändert geblieben sind bewusst: Chat, Streaming, Memory, Kontext-Engine,
+Proaktive Dienste, Model-Routing, Agent-/Coding-Modus, Tasks & Checkpoints,
+Decision-/Verification-Logik. Die einzige Produktänderung ist die erweiterte
+Erkennung der deutschen Merk-Anweisung („Merke dir: …“), weil genau dieses
+Szenario geprüft werden muss.
+
+## 12. Ergebnisse (gemessen, nicht behauptet)
+
+| Prüfung | Ergebnis |
+| --- | --- |
+| `npm run typecheck` | **grün** (node + web) |
+| `npm run lint` (biome) | **grün** (145 Dateien) |
+| `npm run build` | **grün** (main + preload + renderer) |
+| `npm test` | **194 pass / 10 skip / 0 fail** in 25 Dateien (~21 s) |
+| darunter `tests/autonomy.test.ts` | **37 pass** |
+| darunter `tests/e2e-contract.test.ts` | **5 pass** (IPC-Allowlist, CSS-Selektoren, Config-Gruppen, Adapter-Präfixe, PowerShell-Sicherheit) |
+| `npx playwright test --list` | **17 Tests in 5 Dateien** (Sammlung geprüft) |
+| `npm run test:autonomous` (hier, offline) | `prereqs/native/typecheck/build/unit(111)/integration(83)` **PASS**, `smoke`/`e2e` **INFRASTRUCTURE_ERROR** (kein Electron-Dist, keine Anzeige), `ollama` **SKIP** → Gesamturteil **INFRASTRUCTURE_ERROR** (ehrlich, kein Fake-PASS); Analyse: `infrastructure (0.8)` |
+| `npm run test:autonomous -- --quick` | **PASS** mit `SKIP` für smoke/e2e/ollama |
+| `npm run analyze:failure -- --no-ai` | schreibt Analyse + Digest + Auftrag, Kategorie `infrastructure`, Stop-Grund `infrastructure_error` |
+| GitHub | PR-Checks (gehostet) grün; der Windows-Lauf startet automatisch, **sobald der Runner installiert ist** (§13) |
+
+Ehrliche Einordnung: Die Stufen `smoke`/`e2e`/`ollama` können in dieser
+Entwicklungsumgebung (kein Display, keine Electron-Distribution) nicht laufen
+und werden deshalb als `INFRASTRUCTURE_ERROR`/`SKIP` gemeldet — genau das ist
+die gewünschte Ehrlichkeit. Auf dem Windows-Testrechner sind sie der Kern des
+Laufs; die Specs sind dort lauffähig und durch `tests/e2e-contract.test.ts`
+gegen die IPC- und UI-Verträge abgesichert.
+
+## 13. Verbleibende manuelle Schritte
+
+**Einmalig manuell (danach nie wieder):**
+
+1. Repository auf dem Windows-PC klonen (`git clone … C:\src\local-personal-ai`).
+2. `scripts\windows\install-runner.ps1` ausführen (prüft Toolchain, lädt den
+   Runner, registriert Labels, richtet den Autostart ein).
+3. `npm ci` + `npm run rebuild:native` einmal vorwärmen (optional, verkürzt nur
+   den ersten Lauf). Ollama installieren und ein Chat-Modell ziehen, wenn die
+   Runtime-Stufen echt laufen sollen.
+
+Rückbau: `scripts\windows\remove-runner.ps1`.
+
+**Bei jedem weiteren Entwicklungszyklus manuell:** genau **eine** Übergabe —
+den Digest (`latest-chatgpt.md` / den PR-Kommentar / das Artefakt
+`lpai-ai-handoff`) an die zentrale Analyseinstanz geben und den daraus
+entstehenden Auftrag an Arena weitergeben. Alles davor (Teststart,
+Voraussetzungen, Logs, Bericht, Analyse, Formatierung, Rückkanal) und alles
+danach (Push, erneuter Testlauf, Vergleich mit der Vorrunde, Stop-Entscheidung)
+läuft ohne Handgriff.
+
+**Technisch nicht automatisierbar (mit Begründung):**
+
+* GitHub kann keinen neuen Arena-Agentenlauf starten, und ChatGPT kann sich
+  selbst keinen Testlauf auslösen: Es gibt (Stand dieses Projekts) keine
+  öffentliche, dokumentierte Arena-Schnittstelle für eingehende Trigger, und
+  ChatGPT kann ohne Zugangsdaten nicht auf die GitHub-API zugreifen. Deshalb
+  endet die Automatik bewusst am fertigen, maschinenlesbaren Auftrag statt an
+  einer Attrappe. Sobald eine offizielle Arena-Trigger-Schnittstelle existiert,
+  ist der Anschlusspunkt eine Zeile (`latest-arena-task.md` bzw.
+  `latest-chatgpt.json` an diese Schnittstelle übergeben) — die Dateien und der
+  Zustand sind dafür bereits vorhanden.
+* Der Windows-Runner wurde in dieser Umgebung **nicht** installiert (kein
+  Windows-PC, kein Zugriff auf die Zielmaschine). Der Workflow-Lauf
+  „Autonomous test (Windows runner)“ bleibt deshalb bis zur Einrichtung
+  pending; die Skripte sind ASCII-geprüft und durch Tests abgesichert.
+* Die E2E-Szenarien konnten hier nur gesammelt (17 Tests) und statisch geprüft,
+  nicht ausgeführt werden — im Sandkasten fehlen Electron-Distribution und
+  Anzeige. Das ist als `INFRASTRUCTURE_ERROR` sichtbar, nicht als PASS.
+
+## 14. Fazit
+
+Der Kreislauf ist vollständig aufgebaut: Ein Push löst auf dem echten
+Windows-PC den vollständigen Testlauf aus, erzeugt einen vollständigen Report,
+eine deterministisch-voranalysierte Fehlerklassifikation, einen
+maschinenlesbaren Digest und — bei Fehlschlag — einen sofort verwendbaren
+Reparaturauftrag, und legt das Ergebnis als Annotation, Kommentar, Artefakt und
+(bei gestoppter Automatik) als Issue in GitHub ab. ChatGPT ist als zentrale
+Analyse- und Entscheidungsinstanz angebunden, ohne dass eine einzige
+Schnittstelle erfunden wurde; die eine verbleibende Übergabe ist exakt benannt.
+Alles ist begrenzt (sieben Stop-Gründe), nachvollziehbar (Zykluszustand +
+zeitgestempelte Reports im Git) und ehrlich im Status — ein fehlender
+Testrechner, ein fehlendes Modell oder eine fehlende Anzeige wird nie zu einem
+grünen Ergebnis.

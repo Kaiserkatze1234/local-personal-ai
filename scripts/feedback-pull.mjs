@@ -10,11 +10,12 @@
  * Was es holt (alles über die offizielle GitHub-API, `gh` CLI):
  *   1. den frischsten Lauf des Workflows "Autonomous test (Windows runner)"
  *      für den Branch, samt Ergebnis und Run-URL,
- *   2. dessen Artefakt `lpai-test-reports` (latest.json/.md, latest-fix-prompt.md,
+ *   2. dessen Artefakte `lpai-test-reports` und `lpai-ai-handoff` (latest.json/.md,
+ *      latest-chatgpt.json/.md, latest-arena-task.md, latest-fix-prompt.md,
  *      latest-analysis.json, cycle-state.json, Screenshots, Playwright-Traces)
  *      → test-reports/inbox/,
  *   3. den strukturierten Report-Kommentar am Pull Request (falls einer existiert),
- *   4. schreibt test-reports/inbox/BRIEF.md — den knappen Auftrag, mit dem eine
+ *   4. schreibt test-reports/inbox/BRIEF.md und -ARENA-TASK.md — den knappen Auftrag, mit dem eine
  *      Entwicklungsrunde fortgesetzt werden kann (Fehler, Kategorie, Stop-Grund,
  *      Pfade zu Artefakten) — und gibt ihn auf stdout aus.
  *
@@ -103,15 +104,17 @@ rmSync(artifactDir, { recursive: true, force: true });
 let artifactsFetched = false;
 const artifactList =
   JSON.parse(gh(['api', `repos/${repo}/actions/runs/${runId}/artifacts`], { allowFail: true }) ?? '{"artifacts":[]}').artifacts ?? [];
-if (artifactList.some((a) => a.name === 'lpai-test-reports')) {
+// both artefacts are flat file sets and merge into the same inbox folder
+for (const name of ['lpai-test-reports', 'lpai-ai-handoff']) {
+  if (!artifactList.some((a) => a.name === name)) continue;
   try {
-    execFileSync('gh', ['run', 'download', String(runId), '--repo', repo, '--name', 'lpai-test-reports', '--dir', artifactDir], {
+    execFileSync('gh', ['run', 'download', String(runId), '--repo', repo, '--name', name, '--dir', artifactDir], {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     artifactsFetched = true;
   } catch (err) {
-    console.warn(`[feedback] Artefakt-Download fehlgeschlagen: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+    console.warn(`[feedback] Artefakt ${name} fehlgeschlagen: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
   }
 }
 
@@ -131,7 +134,10 @@ if (prs.length > 0) {
 
 const reportFile = existsSync(join(artifactDir, 'latest.json')) ? join(artifactDir, 'latest.json') : null;
 const report = reportFile ? JSON.parse(readFileSync(reportFile, 'utf8')) : null;
-const fixPromptFile = existsSync(join(artifactDir, 'latest-fix-prompt.md')) ? join(artifactDir, 'latest-fix-prompt.md') : null;
+const arenaTaskFile = existsSync(join(artifactDir, 'latest-arena-task.md')) ? join(artifactDir, 'latest-arena-task.md') : null;
+const digestFile = existsSync(join(artifactDir, 'latest-chatgpt.json')) ? join(artifactDir, 'latest-chatgpt.json') : null;
+const fixPromptFile =
+  arenaTaskFile ?? (existsSync(join(artifactDir, 'latest-fix-prompt.md')) ? join(artifactDir, 'latest-fix-prompt.md') : null);
 const stateFile = existsSync(join(artifactDir, 'cycle-state.json')) ? join(artifactDir, 'cycle-state.json') : null;
 const state = stateFile ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;
 
@@ -174,6 +180,9 @@ if (fixPromptFile) {
   brief.push('');
   brief.push(`Reparaturauftrag: \`${fixPromptFile.replace(`${ROOT}/`, '')}\``);
 }
+if (digestFile) {
+  brief.push(`Digest (maschinenlesbar): \`${digestFile.replace(`${ROOT}/`, '')}\``);
+}
 if (comment) {
   brief.push('');
   brief.push('Report-Kommentar am PR ist zusätzlich als `pr-comment.md` gespeichert.');
@@ -185,6 +194,13 @@ if (!artifactsFetched) {
 }
 brief.push('');
 writeFileSync(join(inbox, 'BRIEF.md'), brief.join('\n'));
+if (fixPromptFile) {
+  try {
+    writeFileSync(join(inbox, 'ARENA-TASK.md'), readFileSync(fixPromptFile, 'utf8'));
+  } catch {
+    /* best effort — the brief already names the path */
+  }
+}
 
 console.log(brief.join('\n'));
 if (artifactsFetched) console.log(`\nArtefakte: ${artifactDir}`);

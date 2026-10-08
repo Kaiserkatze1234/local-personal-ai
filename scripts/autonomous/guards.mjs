@@ -182,9 +182,16 @@ export function evaluateGuards({ previous, report, fingerprint, opts = {} }) {
   if (infraStages.length > 0 || (opts.environmentErrors ?? 0) > 0) reasons.push('infrastructure_error');
   if (opts.requireOllama === true && opts.ollamaReachable === false) reasons.push('ollama_unavailable');
 
+  // "worse than last round" on both levels: another stage turned red, or the
+  // failure set grew / gained a test that was not failing before
   const prevFailing = new Set(prev.history.filter((h) => h.verdict !== 'PASS').slice(-1)[0]?.failingStages ?? []);
   const newStages = failingStages.filter((s) => !prevFailing.has(s));
   if (prevFailing.size > 0 && newStages.length > 0 && newStages.length < failingStages.length) reasons.push('tests_regressed');
+  const prevFailed = new Set(prev.baselineFailures ?? []);
+  if (prevFailed.size > 0) {
+    const newFailures = failedTests.filter((t) => !prevFailed.has(t));
+    if (newFailures.length > 0 && failedTests.length > prevFailed.size) reasons.push('tests_regressed');
+  }
 
   const risky = dangerousChangedFiles(opts.changedFiles ?? []);
   if (risky.length > 0 && attempts > 1) reasons.push('dangerous_change');
@@ -229,7 +236,8 @@ export function explainStop(reasons) {
     repeated_failure: 'Derselbe Fehler ist zum dritten Mal aufgetreten (keine neue Information)',
     infrastructure_error: 'Infrastrukturfehler — Umgebung reparieren, nicht den Code',
     ollama_unavailable: 'Ollama wurde für Runtime-Tests vorausgesetzt, antwortet aber nicht',
-    tests_regressed: 'Die Testlage hat sich verschlechtert (zusätzliche Stufen rot)',
+    tests_regressed: 'Die Testlage hat sich verschlechtert (zusätzliche Stufen/Tests rot)',
+    unknown_cause: 'Die Fehleranalyse konnte keine belastbare Ursache bestimmen — keine automatische Änderung',
     dangerous_change: 'Die Änderung berührt die Automations-/Testinfrastruktur selbst — manuelle Prüfung nötig',
   };
   return (reasons ?? []).map((r) => map[r] ?? r);

@@ -35,7 +35,9 @@
  * Electron binary is INFRASTRUCTURE_ERROR, not a skipped test.
  *
  * Outputs in test-reports/: latest.json, latest.md, timestamped copies,
- * latest-fix-prompt.md on failure, latest-analysis.json, cycle-state.json.
+ * latest-chatgpt.json/.md (digest for the analyzing instance — always),
+ * latest-arena-task.md + latest-fix-prompt.md (on failure only, deleted on
+ * PASS so no stale order can survive), latest-analysis.json, cycle-state.json.
  */
 
 import { execSync, spawn } from 'node:child_process';
@@ -45,10 +47,13 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluateGuards, explainStop, guardsForReport, normalizeState } from './autonomous/guards.mjs';
 import {
+  buildAiDigest,
   buildReport,
   extractErrorLines,
   fingerprintOf,
   makeStage,
+  renderAiDigestMarkdown,
+  renderArenaTask,
   renderComment,
   renderFixPrompt,
   renderMarkdown,
@@ -348,6 +353,11 @@ async function stageTests() {
     target.failedTests = failed
       .flatMap((f) => f.assertions.filter((a) => a.status === 'failed').map((a) => String(a.fullName ?? a.title ?? '?')))
       .slice(0, 50);
+    target.skippedTests = files
+      .flatMap((f) =>
+        f.assertions.filter((a) => a.status === 'skipped' || a.status === 'pending').map((a) => String(a.fullName ?? a.title ?? '?')),
+      )
+      .slice(0, 50);
     if (crashed) {
       target.status = /Cannot find|ERR_MODULE_NOT_FOUND|NODE_MODULE_VERSION/.test(result.output) ? 'INFRASTRUCTURE_ERROR' : 'FAIL';
       target.errors = errors;
@@ -423,7 +433,7 @@ async function stageE2e(prereqs) {
   if (!prereqs.facts?.electronOk) {
     s.status = 'INFRASTRUCTURE_ERROR';
     s.errors = ['Electron-Dist fehlt — E2E kann die App nicht starten'];
-    s.note = 'Umgebung, kein Codefehler';
+    s.note = 'Electron-Dist fehlt (npm ci unvollständig oder electron-Postinstall blockiert) — Umgebung, kein Codefehler';
     return s;
   }
   if (!prereqs.facts?.playwrightOk) {
@@ -452,6 +462,10 @@ async function stageE2e(prereqs) {
     });
     s.failedTests = specs
       .filter((x) => !x.ok)
+      .map((x) => x.title)
+      .slice(0, 30);
+    s.skippedTests = specs
+      .filter((x) => x.tests.length > 0 && x.tests.every((t) => t.status === 'skipped'))
       .map((x) => x.title)
       .slice(0, 30);
     s.artifacts = [
@@ -509,6 +523,10 @@ async function stageOllama(ollama) {
       skipped: assertions.filter((a) => a.status === 'skipped').length,
     };
     s.failedTests = assertions.filter((a) => a.status === 'failed').map((a) => String(a.fullName ?? a.title));
+    s.skippedTests = assertions
+      .filter((a) => a.status === 'skipped')
+      .map((a) => String(a.fullName ?? a.title))
+      .slice(0, 30);
     if (s.status === 'PASS' && s.counts.passed === 0) {
       s.status = 'FAIL';
       s.note = 'Live-Lauf beendet, aber kein einziger Test ausgeführt';
@@ -689,12 +707,20 @@ async function main() {
     : stages.some((s) => s.status === 'INFRASTRUCTURE_ERROR')
       ? 'INFRASTRUCTURE_ERROR'
       : 'PASS';
+  // what actually changed since the last TESTED commit (not since the last commit):
+  // committed work plus whatever is sitting uncommitted in the worktree right now
   const changedFilesRaw = previousState?.lastTestedSha
     ? (gitOut(`diff --name-only ${previousState.lastTestedSha}..HEAD`) ?? '')
     : (gitOut('show --name-only --pretty=format: -1') ?? '');
-  const changedFiles = changedFilesRaw
-    .split(/\r?\n/)
-    .map((f) => f.trim())
+  const worktreeRaw = git.dirty ? (gitOut('status --porcelain') ?? '') : '';
+  const changedFiles = [
+    ...new Set([
+      ...changedFilesRaw.split(/\r?\n/),
+      // porcelain columns are fixed-width; renames read "old -> new"
+      ...worktreeRaw.split(/\r?\n/).map((line) => line.slice(3).split(' -> ').pop() ?? ''),
+    ]),
+  ]
+    .map((f) => f.trim().replace(/^"|"$/g, ''))
     .filter(Boolean);
   const evaluation = evaluateGuards({
     previous: previousState,
@@ -709,15 +735,38 @@ async function main() {
     opts: { maxAttempts: CFG.maxAttempts, requireOllama: CFG.requireOllama, ollamaReachable: ollama.reachable, changedFiles },
   });
 
-  const report = buildReport({ meta, stages, guards: guardsForReport(evaluation), startedAt: START, finishedAt: Date.now() });
+  const report = buildReport({
+    meta: { ...meta, changedFiles, previousTestedSha: previousState?.lastTestedSha ?? null },
+    stages,
+    guards: guardsForReport(evaluation),
+    startedAt: START,
+    finishedAt: Date.now(),
+  });
 
+  // The analyzer reads the report from disk, so this run's report has to exist
+  // before the analysis and is refreshed right after it.
+  writeFileSync(join(CFG.outDir, 'latest.json'), JSON.stringify(report, null, 2));
   if (report.verdict !== 'PASS') {
     log('  ⚙ Fehleranalyse …');
     report.analysis = await runAnalysis(previousState);
-    if (report.analysis?.final)
+    if (report.analysis?.final) {
       log(
         `    ${report.analysis.final.category} (${report.analysis.final.confidence}) — ${report.analysis.final.probableCause.slice(0, 120)}`,
       );
+      // promote the analysis to the two fields an outside reader looks at first
+      report.likelyRootCause = report.analysis.final.probableCause;
+      report.confidence = report.analysis.final.confidence;
+      // ... and let an unusable verdict stop the loop: without a plausible cause
+      // an automatic change would be guesswork
+      const a = report.analysis.final;
+      if (a.category === 'unknown' && Number(a.confidence ?? 0) <= 0.1) {
+        evaluation.stop = true;
+        evaluation.reasons = [...new Set([...evaluation.reasons, 'unknown_cause'])];
+        evaluation.state = { ...evaluation.state, stopped: true, stopReasons: evaluation.reasons };
+        report.guards = guardsForReport(evaluation);
+        log('    ⚠ keine belastbare Ursache — Automatik gestoppt (manuelle Prüfung)');
+      }
+    }
   }
 
   writeFileSync(join(CFG.outDir, 'latest.json'), JSON.stringify(report, null, 2));
@@ -728,12 +777,28 @@ async function main() {
   if (report.analysis) writeFileSync(join(CFG.outDir, 'latest-analysis.json'), JSON.stringify(report.analysis, null, 2));
   // a skipped analysis must not leave the previous run's verdict lying around
   else rmSync(join(CFG.outDir, 'latest-analysis.json'), { force: true });
+  // Two audiences read the same run: an analyzing instance (ChatGPT) gets the
+  // machine-readable digest, the coding agent (Arena) gets the repair order.
+  // Both are derived from this one report — never from a second source.
+  const digest = buildAiDigest(report, {
+    analysis: report.analysis,
+    baselineFailures: previousState?.baselineFailures ?? [],
+    previousVerdict: previousState?.lastVerdict ?? null,
+    previousFingerprint: previousState?.fingerprints?.at(-1)?.hash ?? null,
+  });
+  report.aiDigest = { file: 'test-reports/latest-chatgpt.json', isCodeDefect: digest.isCodeDefect, humanSummary: digest.humanSummary };
+  writeFileSync(join(CFG.outDir, 'latest-chatgpt.json'), JSON.stringify(digest, null, 2));
+  writeFileSync(join(CFG.outDir, 'latest-chatgpt.md'), renderAiDigestMarkdown(digest));
+  // re-write the report so it carries the digest reference it just produced
+  writeFileSync(join(CFG.outDir, 'latest.json'), JSON.stringify(report, null, 2));
+  writeFileSync(join(CFG.outDir, `${report.reportId}.json`), JSON.stringify(report, null, 2));
   if (report.verdict !== 'PASS') {
-    writeFileSync(
-      join(CFG.outDir, 'latest-fix-prompt.md'),
-      renderFixPrompt(report, { baselineFailures: previousState?.baselineFailures ?? [], analysis: report.analysis }),
-    );
+    const taskArgs = { baselineFailures: previousState?.baselineFailures ?? [], analysis: report.analysis };
+    writeFileSync(join(CFG.outDir, 'latest-arena-task.md'), renderArenaTask(report, taskArgs));
+    writeFileSync(join(CFG.outDir, 'latest-fix-prompt.md'), renderFixPrompt(report, taskArgs));
   } else {
+    // a green run has no order to hand over and must not leave stale evidence behind
+    rmSync(join(CFG.outDir, 'latest-arena-task.md'), { force: true });
     rmSync(join(CFG.outDir, 'latest-fix-prompt.md'), { force: true });
   }
   writeFileSync(
@@ -745,7 +810,17 @@ async function main() {
   if (process.env.GITHUB_OUTPUT) {
     writeFileSync(
       process.env.GITHUB_OUTPUT,
-      `${[`verdict=${report.verdict}`, `exit_code=${report.exitCode}`, `stop=${evaluation.stop}`, `stop_reasons=${evaluation.reasons.join(',')}`, `report_id=${report.reportId}`, `ollama_reachable=${ollama.reachable}`, `duration_s=${Math.round(report.durationMs / 1000)}`].join('\n')}\n`,
+      `${[
+        `verdict=${report.verdict}`,
+        `exit_code=${report.exitCode}`,
+        `stop=${evaluation.stop}`,
+        `stop_reasons=${evaluation.reasons.join(',')}`,
+        `report_id=${report.reportId}`,
+        `ai_digest=test-reports/latest-chatgpt.json`,
+        `is_code_defect=${digest.isCodeDefect}`,
+        `ollama_reachable=${ollama.reachable}`,
+        `duration_s=${Math.round(report.durationMs / 1000)}`,
+      ].join('\n')}\n`,
       { flag: 'a' },
     );
   }

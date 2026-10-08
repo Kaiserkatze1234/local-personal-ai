@@ -3,10 +3,15 @@
 Dieses Dokument beschreibt den automatischen Weg
 
 ```
-Arena  →  Code-Änderung  →  GitHub  →  Windows-PC  →  Testlauf  →  Report
-      ↑                                                                  ↓
-      └────────  Rückkanal (Report, Check, PR-Kommentar, Auftrag)  ←──────┘
+ChatGPT  →  Arena-Auftrag  →  Arena (Code)  →  GitHub  →  Windows-PC
+   ↑                                                          ↓
+   └──  Digest (latest-chatgpt.json/.md)  ←──  Testlauf + Analyse + Reports
 ```
+
+Zwei Leser bekommen aus **einem** Report zwei Formate: die zentrale
+Analyse-/Entscheidungsinstanz (ChatGPT) liest den kompakten, maschinenlesbaren
+**Digest** (`test-reports/latest-chatgpt.json|.md`), der Reparatur-Agent
+(Arena) den fertigen **Auftrag** (`test-reports/latest-arena-task.md`).
 
 und **genau die manuellen Schritte, die einmalig nötig sind** (Abschnitt 2).
 Danach startet jeder Push auf `main` oder `arena/*` den echten Testlauf auf dem
@@ -19,7 +24,7 @@ Windows-PC — ohne ZIP, ohne Kopieren, ohne manuellen Teststart.
 | Baustein | Datei | Aufgabe |
 | --- | --- | --- |
 | Orchestrator | `scripts/autonomous-test.mjs` (`npm run test:autonomous`) | EIN Einstiegspunkt: prüft Voraussetzungen, führt alle Stufen aus, schreibt Reports, ruft die Fehleranalyse, wertet die Sicherheitsgrenzen aus |
-| Report | `scripts/autonomous/report.mjs` | `test-reports/latest.json|.md`, zeitgestempelte Kopien, `latest-fix-prompt.md`, PR-Kommentar-Text |
+| Report | `scripts/autonomous/report.mjs` | `test-reports/latest.json|.md`, zeitgestempelte Kopien, PR-Kommentar-Text **und die beiden Handoff-Formate**: `latest-chatgpt.json|.md` (Digest für die Analyseinstanz) und `latest-arena-task.md` (Reparaturauftrag) |
 | Zyklus-Wächter | `scripts/autonomous/guards.mjs` | Runden zählen, Wiederholungen erkennen, Stop-Entscheidungen, `cycle-state.json` |
 | Fehleranalyse | `src/main/diagnostics/failureAnalysis.ts` + `scripts/analyze-failure.mjs` | deterministische Regeln, nur bei Fehlern zusätzlich das lokale Modell über den vorhandenen ModelRouter |
 | E2E | `tests/e2e/*.spec.ts` + `playwright.config.ts` | echtes Electron: Fenster, Preload-Bridge, IPC, Chat, Streaming, Stop, Memory, Kontext, Shutdown |
@@ -93,7 +98,8 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\remove-runner.ps1
    (Rundenzähler und Wiederholungserkennung überleben den Lauf).
 3. `npm ci`
 4. `npm run test:autonomous -- --ci …`
-5. Artefakt-Upload `lpai-test-reports` (immer) und `lpai-e2e-artifacts`
+5. Artefakt-Upload `lpai-test-reports` (immer), `lpai-ai-handoff` (immer:
+   genau die Dateien, die die Analyseinstanz braucht) und `lpai-e2e-artifacts`
    (bei Fehlschlag), jeweils mit Screenshots und Playwright-Traces.
 6. Strukturierter PR-Kommentar (Marker `<!-- lpai-autonomous-report -->`,
    wird aktualisiert statt gespammt) + Check-Annotationen im Lauf.
@@ -128,7 +134,10 @@ Alles liegt in `test-reports/` (nicht in Git, Reports reisen als CI-Artefakt):
 | `latest.json` | vollständiger Report (Schema 1): `reportId`, `verdict`, `exitCode`, `git{commit,branch,subject,dirty}`, `runner{os,node,npm,cpu,ram,…}`, `ollama{reachable,baseUrl,models,version}`, `stages[]{name,status,durationMs,exitCode,counts,failedTests,errors,note,artifacts}`, `summary{passed,failed,skipped,infrastructureErrors,failedTests}`, `guards{stop,reasons,attempt}`, `analysis`, `artifacts{screenshots,traces,logs}` |
 | `latest.md` | derselbe Report als lesbares Markdown |
 | `<reportId>.json` / `.md` | zeitgestempelte Kopie jedes Laufs |
-| `latest-fix-prompt.md` | **nur bei Fehlschlag**: der fertige Reparaturauftrag (wird bei `PASS` gelöscht) |
+| `latest-chatgpt.json` | **Digest für die Analyseinstanz** (Schema 1): `verdict`, `whatWasTested{pipeline,branch,commit,runner,os,durationMs,stages,ollama,changedFiles,previousTestedSha}`, `works[]`, `broken[]`, `failedTests[]`, `skippedTests[]`, `infrastructureErrors[]`, `isCodeDefect`/`isInfrastructureError`, `likelyRootCause`, `confidence`, `classification{category,categoryLabel,source}`, `regression{isRegression,repeatedFailure,progress,newFailures,fixedSinceLastRun,...}`, `reproduce{clone,commit,steps,stageCommands}`, `affectedFiles[]`, `recommendedFix`, `testsToRerun{stages,failedTests,mustStayGreen}`, `artifacts` |
+| `latest-chatgpt.md` | derselbe Digest als knapper Text (was getestet / was läuft / was ist kaputt / Einordnung / Empfehlung) |
+| `latest-arena-task.md` | **nur bei Fehlschlag**: der für Arena direkt verwendbare Reparaturauftrag (Problem, Reproduktion, Erwartet/Gemessen, betroffene Tests, Dateien, Logs, Trace/Screenshot, Ursache, gewünschtes Verhalten, Einschränkungen, Regressionstest, Loop-Status) — wird bei `PASS` gelöscht |
+| `latest-fix-prompt.md` | dasselbe Zielformat wie bisher (Kompatibilität), wird bei `PASS` gelöscht |
 | `latest-analysis.json` | Ergebnis der Fehleranalyse |
 | `cycle-state.json` | Runden, Fingerprints, letzter guter Stand, Stop-Grund |
 | `e2e-artifacts/`, `artifacts/` | Screenshots, Traces, Anhänge |
@@ -169,39 +178,68 @@ npm run analyze:failure                 # letzter Report, mit lokaler KI
 npm run analyze:failure -- --no-ai      # nur Regeln
 ```
 
-## 7. Arena-Rückkanal (was automatisch geht — und was nicht)
+## 7. ChatGPT-Lesepfad und Arena-Auftragspfad
 
-**Automatisch vorhanden:**
+**ChatGPT (zentrale Analyse-/Entscheidungsinstanz)** liest genau eine Datei:
+`test-reports/latest-chatgpt.json` (Artefakt `lpai-ai-handoff`) bzw. die
+Kurzfassung `latest-chatgpt.md`. Beide beantworten ohne Nachdenken:
+
+| Frage | Feld |
+| --- | --- |
+| Was wurde getestet? | `whatWasTested{pipeline,branch,commit,runner,os,stages,ollama,changedFiles}` |
+| Was funktioniert? | `works[]` |
+| Was ist kaputt? | `broken[]`, `failures[]{stage,expected,actual,failedTests,affectedFiles,stacktrace,screenshot,trace}` |
+| Code- oder Infrastrukturfehler? | `isCodeDefect`, `isInfrastructureError`, `classification.category(+Label)`, `infrastructureErrors[]` |
+| Welche Dateien sind relevant? | `affectedFiles[]`, `classification.file` |
+| Was hat sich seit dem letzten Lauf geändert? | `whatWasTested.changedFiles[]`, `previousTestedSha` |
+| Regression? | `regression{isRegression,newFailures,fixedSinceLastRun,progress,repeatedFailure}` |
+| Wie reproduzieren? | `reproduce{clone,commit,steps,stageCommands}` |
+| Empfohlene Korrektur? | `recommendedFix`, `likelyRootCause`, `confidence` |
+| Welche Tests müssen danach bestehen? | `testsToRerun{stages,failedTests,mustStayGreen}` |
+
+Kein Rohlog, kein Repository-Abdruck, keine persönlichen Daten: Fehlerzeilen
+sind gefiltert, Listen begrenzt (der Digest bleibt unter ~20 kB).
+
+**Arena (Reparatur)** liest `test-reports/latest-arena-task.md` — derselbe Lauf,
+aber als Auftrag formuliert (Abschnitt 5). Der Weg dorthin ist automatisch:
+
+```
+Test rot → Analyse → latest-chatgpt.json  →  (ChatGPT entscheidet & formuliert)
+                  ↘ latest-arena-task.md  →  Arena repariert → Push → …
+```
+
+**Automatische Kanäle (alle offiziell, nichts erfunden):**
 
 1. **Check-Annotationen** (`::error::`/`::warning::` mit Stufe + erster
    Fehlerzeile) — direkt im PR/Commit sichtbar.
-2. **Strukturierter PR-Kommentar** mit Marker, Stufentabelle, fehlgeschlagenen
-   Tests, Analyse-Kategorie, Stop-Grund und Badge, ob eine Umgebungsstörung
-   vorliegt.
-3. **Artefakte** `lpai-test-reports` / `lpai-e2e-artifacts` (Reports,
-   `latest-fix-prompt.md`, Screenshots, Traces) — über die offizielle API
-   abrufbar.
-4. **`npm run feedback:pull`** holt genau das in den Arbeitsbaum
-   (`test-reports/inbox/`, inkl. `BRIEF.md` und `pr-comment.md`) und druckt den
-   Auftrag — der von Arena direkt weiterverwendbare Rückkanal.
-5. **Start des Testlaufs aus Arena heraus** über die offizielle
-   Workflow-API/Dispatch (kein Rate-Rate): `gh workflow run` bzw.
-   `repository_dispatch` stehen als Trigger bereit.
+2. **Strukturierter PR-Kommentar** mit Marker `<!-- lpai-autonomous-report -->`,
+   Stufentabelle, fehlgeschlagenen Tests, Analyse-Kategorie, Stop-Grund.
+3. **Artefakte** `lpai-ai-handoff` (Digest + Auftrag), `lpai-test-reports`
+   (Reports + State), `lpai-e2e-artifacts` (Screenshots, Traces).
+4. **`npm run feedback:pull`** holt beides in den Arbeitsbaum
+   (`test-reports/inbox/`, inkl. `BRIEF.md`, `ARENA-TASK.md`, `pr-comment.md`).
+5. **Start des Testlaufs aus Arena heraus** über die offizielle Workflow-API:
+   `gh workflow run "Autonomous test (Windows runner)"` bzw.
+   `repository_dispatch` — beide Trigger sind vorhanden.
 
-**Die verbleibende Grenze — ehrlich benannt:** GitHub kann keinen *neuen*
-Arena-Agentenlauf starten; dafür gibt es (Stand dieses Projekts) keine
-öffentliche, dokumentierte Arena-Schnittstelle. Der Kreislauf ist daher
-automatisch bis zum fertigen, maschinenlesbaren Auftrag:
+**Die verbleibende Grenze — exakt benannt:** GitHub kann keinen *neuen*
+Arena-Agentenlauf starten, und ChatGPT kann sich nicht selbst einen Testlauf
+auslösen; dafür gibt es (Stand dieses Projekts) keine öffentliche,
+dokumentierte Schnittstelle. Der Kreislauf ist daher automatisch bis zum
+fertigen, maschinenlesbaren Auftrag:
 
 ```
-Test rot → Analyse → latest-fix-prompt.md → PR-Kommentar + Artefakt
-        → npm run feedback:pull → BRIEF.md  → [eine Entwicklungsrunde]
+Push → Windows-Test → Report + Analyse → Digest/Auftrag → Artefakt + Kommentar
+     → feedback:pull → [eine Übergabe an ChatGPT/Arena] → reparieren → Push
 ```
 
-Der letzte Anstoß — „jetzt reparieren“ — ist der einzige verbleibende manuelle
-Moment. Er wird bewusst **nicht** durch nachgestellte Automatik ersetzt
-(kein erfundener Endpunkt, kein Fake-Trigger). Alle Schritte davor und danach
-laufen ohne Handgriff, inklusive Rückkanal.
+Der letzte Anstoß — „jetzt reparieren“ bzw. „hier ist der Digest“ — ist der
+einzige verbleibende manuelle Moment. Er wird bewusst **nicht** durch
+nachgestellte Automatik ersetzt (kein erfundener Endpunkt, kein Fake-Trigger).
+Von den manuellen Schritten der ursprünglichen Liste entfallen damit:
+ZIP herunterladen/entpacken, kopieren, Kommandos tippen, Tests starten, Logs
+kopieren, aus dem Report einen Prompt bauen. Übrig bleibt **eine** Übergabe:
+Digest/Auftrag an die zentrale Instanz geben.
 
 ## 8. Reparaturzyklus und Sicherheitsgrenzen
 
@@ -216,7 +254,8 @@ Fix-Commits hinweg; ein `PASS` setzt alles zurück (`attempts = 0`,
 | `repeated_failure` | derselbe Fehler-Fingerprint ≥ 3 Mal (Fix wirkt nicht) |
 | `infrastructure_error` | eine Stufe ist `INFRASTRUCTURE_ERROR` |
 | `ollama_unavailable` | `--require-ollama`, aber kein Server |
-| `tests_regressed` | neue fehlschlagende Stufen gegenüber der Vorrunde |
+| `tests_regressed` | neue fehlschlagende Stufen **oder** eine gewachsene Fehlermenge gegenüber der Vorrunde |
+| `unknown_cause` | die Analyse liefert keine belastbare Ursache (Kategorie `unknown`, Konfidenz ≤ 0,1) — keine Rateänderung |
 | `dangerous_change` | ab der zweiten Runde Änderungen an Workflows, Autonomie-Skripten, Runner-Skripten oder Playwright-Konfiguration |
 
 Bei einem Stop wird **nicht** weitergearbeitet: Der Report erklärt warum, der
@@ -278,3 +317,24 @@ brechen darf, ohne dass der Lauf rot wird.
    mitführen.
 3. In `tests/autonomy.test.ts` aufnehmen, damit Stufenliste und
    Stop-Regeln nicht auseinanderlaufen.
+
+## 13. Was die E2E-Stufe wirklich prüft
+
+`tests/e2e/*.spec.ts` startet die **gebaute** App als echtes Electron über
+Playwright (`_electron.launch`), gegen einen gescripteten OpenAI-kompatiblen
+Provider (deterministisch, kein Modell nötig) oder — in der Live-Spezifikation —
+gegen das echte lokale Ollama. Jeder Lauf bekommt einen Wegwerf-Datenordner.
+
+| Datei | Szenarien |
+| --- | --- |
+| `startup.spec.ts` | App startet, Fenster sichtbar, Renderer lädt, Preload-Bridge vollständig, unbekannte IPC-Methode wird blockiert, echter IPC-Roundtrip (`app.info`), SQLite antwortet, sauberer Shutdown mit Exitcode 0 |
+| `chat.spec.ts` | Antwort ist exakt der Modelltext, Streaming rendert schrittweise, Stop bricht wirklich ab (kein Weiterlaufen), Provider-Fehler wird ehrlich gemeldet statt erfunden, **"Hallo"** als Alltagsszenario, Frage nach den Arbeitsbedingungen ohne interne Marker |
+| `memory-context.spec.ts` | "remember that …" landet in der DB und im nächsten Prompt, **"Merke dir: Ich mag kurze Antworten."** inkl. Abruf danach, Memory überlebt den Neustart, Konversationshistorie nur in derselben Konversation, passende Memory rankt vor unpassender, **"Erkläre mir Quantenphysik." bleibt frei von persönlichem Kontext**, alte Konversation nach Neustart wiederfindbar (`conversations.search`) |
+| `tasks.spec.ts` | **"Was habe ich noch offen?"** — jeder Chat-Zug ist ein Task, nichts bleibt aktiv hängen, Task-Record überlebt den Neustart, Absturz mitten im Lauf → beim Start als `paused` wiederfindbar (Crash-Recovery) |
+| `real-ollama.spec.ts` | echtes Modell antwortet in vertretbarer Zeit; die Antwort enthält keinen internen Kontext (keine Marker, kein Kontext-Dump); ohne erreichbaren Server ist die Stufe SKIP, nie PASS |
+
+Bewusste Regeln: `retries: 0` (ein Retry würde einen echten Fehler verstecken),
+`workers: 1` (16-GB-Rechner, ein Electron + höchstens ein Modell), Traces und
+Screenshots nur bei Fehlschlag, und jede Assertion über Modelltext läuft über
+`bubbleText()` — damit ein späteres UI-Element im Bubble nicht als "falsche
+Antwort" durchgeht.

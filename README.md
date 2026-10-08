@@ -57,12 +57,15 @@ Pushing to `main` or `arena/*` starts the real test suite on the Windows PC and
 reports back into GitHub — no ZIP, no manual test start, no copy-paste:
 
 ```
-Arena → push/PR → GitHub Actions (self-hosted Windows runner)
-      → npm run test:autonomous  (prereqs, native, typecheck, build, unit,
-                                  integration, smoke, Electron E2E, Ollama)
-      → test-reports/latest.{json,md} + latest-fix-prompt.md + screenshots/traces
-      → Check annotations + structured PR comment + workflow artifacts
-      → npm run feedback:pull  (Arena reads the run back)
+ChatGPT/Arena → push/PR → GitHub Actions (self-hosted Windows runner)
+              → npm run test:autonomous  (prereqs, native, typecheck, build,
+                                          unit, integration, smoke, Electron
+                                          E2E, Ollama)
+              → test-reports/latest.{json,md}                (full report)
+              → test-reports/latest-chatgpt.{json,md}        (digest to analyze)
+              → test-reports/latest-arena-task.md            (repair order, FAIL only)
+              → Check annotations + structured PR comment + artifacts
+              → npm run feedback:pull  (reads run + digest + order back)
 ```
 
 * `npm run test:autonomous` is the single entry point (also runnable locally).
@@ -73,8 +76,14 @@ Arena → push/PR → GitHub Actions (self-hosted Windows runner)
 * Failure analysis runs only on failure and reuses the app's own model
   infrastructure (`ModelRouter`/`ModelRoleService`); deterministic rules first,
   the local model only when the evidence is not decisive.
+* Two audiences, one report: `latest-chatgpt.json` answers *what was tested,
+  what broke, is it code or environment, what changed, regression, how to
+  reproduce, recommended fix, which tests must pass next*; `latest-arena-task.md`
+  is the same run written as a work order (problem, reproduction, expected vs
+  actual, files, logs, trace, constraints, regression-test requirement).
 * The automatic repair cycle stops on repeated identical errors, infrastructure
-  errors, missing Ollama, regressions and dangerous changes.
+  errors, missing Ollama, regressions, growing failure counts, an unusable
+  analysis and dangerous changes (editing the loop itself).
 
 One-time setup (install the runner + warm the dependencies) and the exact
 remaining interface limit are documented in

@@ -25,7 +25,10 @@ const PROJECT_HINTS = /(project|repo|code|build|test|error|crash|bug|deploy|funk
 export function classifyTask(userText: string, mode: AppMode, hasProject: boolean, hasImages: boolean): TaskClass {
   const t = userText.toLowerCase();
   if (hasImages) return 'vision';
-  if (/^(remember that|merk dir|don'?t forget|ab jetzt immer|always )/.test(t) || /remember (that|my|my preference)/.test(t))
+  if (
+    /^(remember that|merk dir|merke dir|merke|don'?t forget|note that|ab jetzt immer|always )/i.test(t) ||
+    /remember (that|my|my preference)/.test(t)
+  )
     return 'informational';
   if (hasProject && /(fix|debug|crash|error|exception|stack trace|warum.*geht nicht|reparier|报错|异常)/.test(t)) return 'debugging';
   if (hasProject && /(refactor|add feature|implement|write.*test|optimi|schneller|performance|verbesser|funktion hinzufügen|code)/.test(t))

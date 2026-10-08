@@ -23,7 +23,7 @@ test.describe('Real local runtime (Ollama)', () => {
     `Kein Ollama unter ${process.env.LPAI_OLLAMA_URL ?? 'http://127.0.0.1:11434'} (${reach.reason ?? 'kein Server'}) — Runtime-Tests bleiben SKIP, nicht PASS.`,
   );
 
-  test('a real model answers a normal question promptly, without internal context leaking into the answer', async (_fixtures, testInfo) => {
+  test('a real model answers a normal question promptly, without internal context leaking into the answer', async () => {
     const model = pickChatModel(reach.models);
     test.skip(!model, `Kein chat-fähiges Modell installiert (gefunden: ${reach.models.join(', ') || 'keine'})`);
     // a real model on a laptop CPU needs room; the suite timeout stays tight for the rest
@@ -50,7 +50,7 @@ test.describe('Real local runtime (Ollama)', () => {
       }
       expect(answer.length, 'Antwort ist eine Antwort, kein Kontext-Dump').toBeLessThan(2000);
     } finally {
-      await h.attachDiagnostics(testInfo);
+      await h.attachDiagnostics(test.info());
       await h.close();
     }
   });
