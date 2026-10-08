@@ -30,16 +30,39 @@ function magicOk(platform, file) {
   }
 }
 
+// builder-util Arch enum: ia32=0, x64=1, armv7l=2, arm64=3, universal=4 —
+// the REAL electron-builder context passes `arch` as a NUMBER; 'x64'/'arm64'
+// strings only ever appeared in our old mocks (both shapes accepted here).
+const ARCH_NAMES = ['ia32', 'x64', 'armv7l', 'arm64', 'universal'];
+function archName(arch) {
+  if (typeof arch === 'number') return ARCH_NAMES[arch] ?? 'x64';
+  if (typeof arch === 'string' && arch) return arch;
+  return 'x64';
+}
+
+/**
+ * electron-builder 26.x PlatformPackager exposes `projectDir` as a STRING
+ * getter (platformPackager.d.ts: `get projectDir(): string`; `packager.info`
+ * is the Packager, whose `readonly projectDir` is also a string). The former
+ * `projectDir?.()` call was never the real API and crashed a full Windows
+ * dist with "context.packager?.projectDir is not a function".
+ */
+function resolveProjectDir(context) {
+  const p = context == null ? void 0 : context.packager;
+  for (const v of [p == null ? void 0 : p.projectDir, p?.info?.projectDir]) {
+    if (typeof v === 'string' && v) return v;
+  }
+  return process.cwd();
+}
+
 /** Exported for tests; `context` mirrors electron-builder's AfterPackContext. */
 async function afterPack(context) {
   const platform = context.electronPlatformName ?? context.platform ?? process.platform;
-  const arch = context.arch ?? 'x64';
-  const projectDir = process.env.LPAI_NATIVE_ROOT
-    ? { nativeDir: process.env.LPAI_NATIVE_ROOT }
-    : { nativeDir: join(context.packager?.projectDir?.() ?? process.cwd(), 'native', 'electron') };
+  const arch = archName(context.arch);
+  const nativeDir = process.env.LPAI_NATIVE_ROOT ?? join(resolveProjectDir(context), 'native', 'electron');
   const triple = `${platform}-${arch}`;
-  const src = join(projectDir.nativeDir, triple, 'better_sqlite3.node');
-  const metaFile = join(projectDir.nativeDir, triple, 'meta.json');
+  const src = join(nativeDir, triple, 'better_sqlite3.node');
+  const metaFile = join(nativeDir, triple, 'meta.json');
 
   if (!existsSync(src) || !existsSync(metaFile)) {
     throw new Error(
@@ -82,3 +105,5 @@ async function afterPack(context) {
 module.exports = afterPack;
 module.exports.afterPack = afterPack;
 module.exports.magicOk = magicOk;
+module.exports.archName = archName;
+module.exports.resolveProjectDir = resolveProjectDir;

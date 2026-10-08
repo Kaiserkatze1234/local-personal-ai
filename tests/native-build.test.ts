@@ -59,9 +59,9 @@ describe('afterPack native binding injection', () => {
       expect(readFileSync(unpackedBin).subarray(0, 2)[0]).toBe(0x7f); // pre-state: ELF (Node-ABI linux build)
       await afterPack({
         electronPlatformName: 'win32',
-        arch: 'x64',
+        arch: 1,
         appOutDir: f.appOutDir,
-        packager: { projectDir: () => f.dir, info: { electronVersion: '41.7.1' } },
+        packager: { projectDir: f.dir, info: { electronVersion: '41.7.1' } },
       });
       const installed = readFileSync(join(f.appOutDir, 'resources', 'native', 'electron', 'better_sqlite3.node'));
       expect(installed.subarray(0, 2).toString()).toBe('MZ');
@@ -76,7 +76,7 @@ describe('afterPack native binding injection', () => {
     const f = fixture();
     try {
       await expect(
-        afterPack({ electronPlatformName: 'win32', arch: 'arm64', appOutDir: f.appOutDir, packager: { projectDir: () => f.dir } }),
+        afterPack({ electronPlatformName: 'win32', arch: 3, appOutDir: f.appOutDir, packager: { projectDir: f.dir } }),
       ).rejects.toThrow(/rebuild:native/);
     } finally {
       rmSync(f.dir, { recursive: true, force: true });
@@ -91,9 +91,9 @@ describe('afterPack native binding injection', () => {
       await expect(
         afterPack({
           electronPlatformName: 'win32',
-          arch: 'x64',
+          arch: 1,
           appOutDir: f.appOutDir,
-          packager: { projectDir: () => f.dir, info: { electronVersion: '41.7.1' } },
+          packager: { projectDir: f.dir, info: { electronVersion: '41.7.1' } },
         }),
       ).rejects.toThrow(/--force/);
     } finally {
@@ -111,9 +111,9 @@ describe('afterPack native binding injection', () => {
       await expect(
         afterPack({
           electronPlatformName: 'win32',
-          arch: 'x64',
+          arch: 1,
           appOutDir: f.appOutDir,
-          packager: { projectDir: () => f.dir, info: { electronVersion: '41.7.1' } },
+          packager: { projectDir: f.dir, info: { electronVersion: '41.7.1' } },
         }),
       ).rejects.toThrow(/corrupt|not a win32 binary|verification failed/);
     } finally {
@@ -162,5 +162,46 @@ describe('wiring (single source of truth)', () => {
     // the engine verifies by loading, and repairs via npm rebuild — both must exist
     expect(src).toMatch(/require\('better-sqlite3'\)/);
     expect(src).toMatch(/npm', \['rebuild', 'better-sqlite3'\]/);
+  });
+
+  describe('afterPack context-shape regression (electron-builder 26.15.3)', () => {
+    const { archName, resolveProjectDir } = require('../scripts/afterPack.cjs');
+
+    it('Arch is a NUMBER in real contexts (x64=1, arm64=3) — the old ?? string fallback would build win32-1', () => {
+      expect(archName(0)).toBe('ia32');
+      expect(archName(1)).toBe('x64');
+      expect(archName(3)).toBe('arm64');
+      expect(archName('arm64')).toBe('arm64'); // legacy/string tolerance kept for direct calls
+      expect(archName(undefined)).toBe('x64');
+    });
+
+    it('projectDir is a STRING getter on PlatformPackager — never callable; info.projectDir is the fallback', () => {
+      expect(resolveProjectDir({ packager: { projectDir: '/real/proj' } })).toBe('/real/proj');
+      expect(resolveProjectDir({ packager: { info: { projectDir: '/info/proj' } } })).toBe('/info/proj');
+      expect(typeof resolveProjectDir({})).toBe('string'); // cwd fallback, never a throw
+      // the EXACT crash shape from the Windows dist: property present but NOT a function
+      const ctx = { packager: { projectDir: '/x', info: {} } };
+      expect(() => (ctx.packager.projectDir as unknown as () => string)()).toThrow(TypeError); // old code path — documented by this pin
+      expect(resolveProjectDir(ctx)).toBe('/x'); // fixed path handles it
+    });
+
+    it('full afterPack runs against the REAL 26.x-shaped context (string projectDir + numeric arch)', async () => {
+      const f = fixture();
+      try {
+        fakeBinding(join(f.nativeDir, 'win32-arm64', 'better_sqlite3.node'), 'pe');
+        writeFileSync(join(f.nativeDir, 'win32-arm64', 'meta.json'), JSON.stringify({ electron: '41.10.7', sha16: 'ab'.repeat(8) }));
+        await afterPack({
+          outDir: f.appOutDir, // real PackContext members
+          appOutDir: f.appOutDir,
+          electronPlatformName: 'win32',
+          arch: 3,
+          packager: { projectDir: f.dir, info: { electronVersion: '41.10.7' } },
+        });
+        const installed = readFileSync(join(f.appOutDir, 'resources', 'native', 'electron', 'better_sqlite3.node'));
+        expect(installed.subarray(0, 2).toString()).toBe('MZ'); // win32 payload for the numeric-arm64 triple
+      } finally {
+        rmSync(f.dir, { recursive: true, force: true });
+      }
+    });
   });
 });
