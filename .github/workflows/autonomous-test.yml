@@ -57,12 +57,12 @@ jobs:
     env:
       LPAI_MAX_FIX_ATTEMPTS: ${{ inputs.max_attempts || '3' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # diffs against the last tested commit are part of the analysis
 
       - name: Restore cycle state (loop protection)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: test-reports/cycle-state.json
           key: lpai-cycle-${{ github.ref_name }}-${{ github.run_id }}
@@ -92,14 +92,14 @@ jobs:
 
       - name: Save cycle state (loop protection)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: test-reports/cycle-state.json
           key: lpai-cycle-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload test reports, screenshots and traces
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lpai-test-reports
           if-no-files-found: warn
@@ -117,7 +117,7 @@ jobs:
 
       - name: Failure artifacts (raw, short retention)
         if: steps.run.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lpai-e2e-artifacts
           if-no-files-found: ignore
@@ -128,7 +128,7 @@ jobs:
 
       - name: Publish report comment on the pull request
         if: always() && github.ref != 'refs/heads/main'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -179,7 +179,7 @@ jobs:
 
       - name: Escalate when the automatic loop is stopped
         if: always() && steps.run.outcome == 'failure'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
