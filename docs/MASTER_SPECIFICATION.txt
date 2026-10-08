@@ -1,0 +1,2547 @@
+LOCAL PERSONAL AI AGENT
+MASTER BUILD SPECIFICATION
+Version 2.0 — Development/Runtime separation
+
+======================================================================
+0. ABSOLUTELY IMPORTANT — DEVELOPMENT MODEL VS. FINISHED APP MODEL
+======================================================================
+
+This document is the authoritative build specification for the project.
+
+The project is being BUILT with OpenCode and Qwen Coder 8B.
+
+QWEN CODER 8B IS A DEVELOPMENT MODEL ONLY.
+
+Qwen Coder 8B is used by OpenCode to:
+- write code,
+- understand the architecture,
+- implement features,
+- debug the project,
+- refactor code,
+- create tests,
+- inspect project files,
+- and help complete the application.
+
+Qwen Coder 8B must NOT be treated as the mandatory model of the finished
+application.
+
+The finished application MUST NOT be architecturally dependent on Qwen
+Coder 8B.
+
+The finished application MUST contain a provider/model abstraction layer
+that allows the runtime AI model to be selected independently from the
+model used to develop the software.
+
+The intended conceptual architecture is:
+
+USER
+  |
+  v
+OPENCODE
+  |
+  v
+QWEN CODER 8B
+  |
+  |  development only
+  v
+APPLICATION SOURCE CODE
+  |
+  v
+FINISHED LOCAL PERSONAL AI
+  |
+  v
+MODEL PROVIDER ABSTRACTION
+  |
+  +--> Ollama
+  +--> other local OpenAI-compatible servers
+  +--> other local model runtimes
+  +--> future providers
+  +--> user-selectable runtime models
+
+Therefore:
+
+DEVELOPMENT STACK:
+OpenCode + Qwen Coder 8B
+
+FINISHED APPLICATION:
+Independent local personal AI with replaceable runtime model/provider
+
+Do not confuse these two layers anywhere in the implementation.
+
+======================================================================
+1. PROJECT MISSION
+======================================================================
+
+Build a completely local personal AI application for a Windows laptop.
+
+The application should feel less like a conventional chatbot and more like
+a local personal computer assistant/agent that can understand the user's
+intent, reason about tasks, work with files and projects, use approved
+computer tools, remember useful information, learn workflows, and assist
+the user proactively when appropriate.
+
+The application should be:
+
+- local-first,
+- efficient,
+- modular,
+- extensible,
+- fast,
+- reliable,
+- understandable,
+- recoverable,
+- privacy-preserving,
+- resource-aware,
+- visually polished,
+- useful for everyday computer use,
+- especially strong for coding and project work,
+- capable of multimodal interaction,
+- and designed so that features can evolve without rewriting the core.
+
+The application must NOT become a collection of unrelated productivity
+features.
+
+Do not add calendars, alarms, generic reminders, habit trackers, finance
+tools, or other unrelated features merely because they are technically
+possible.
+
+Every feature must support the central concept:
+
+"A local personal AI that understands me, my computer, my files, my projects,
+and my workflows, and can help me accomplish things."
+
+======================================================================
+2. CORE PRODUCT CONCEPT
+======================================================================
+
+The finished application is a local AI agent/presence.
+
+It should be able to operate in several modes:
+
+1. CHAT
+   Normal conversation and questions.
+
+2. AGENT
+   The AI can plan and execute multi-step tasks using approved tools.
+
+3. CODING
+   The AI understands projects, files, code, errors, builds and tests.
+
+4. COMPUTER ASSISTANT
+   The AI can inspect approved computer context and assist with tasks.
+
+5. VISION
+   The AI can analyze screenshots and other supported visual input.
+
+6. SCREEN ANALYSIS
+   The AI can analyze recorded or captured screen activity.
+
+7. OVERLAY
+   The AI can optionally display a lightweight desktop overlay.
+
+8. VOICE
+   The user can communicate through local speech recognition and local
+   speech synthesis when suitable models are available.
+
+9. MEMORY
+   The AI can use stored, relevant previous knowledge.
+
+10. LEARNING
+    The AI can improve workflows and preferences through explicit and
+    controlled learning.
+
+11. PROMPT ASSISTANT
+    While the user is writing a prompt, a lightweight separate component
+    can identify missing information, ambiguity, contradictions and useful
+    additions before the prompt is submitted.
+
+The user should not have to understand all internal systems.
+
+The UI should make the system feel coherent.
+
+======================================================================
+3. NON-NEGOTIABLE DESIGN PRINCIPLES
+======================================================================
+
+3.1 LOCAL-FIRST
+
+Core functionality must work without a cloud AI service.
+
+The application may optionally support Internet access for features where
+the user explicitly enables it, but cloud access must not be required for
+the core architecture.
+
+3.2 MODEL INDEPENDENCE
+
+Never hard-code one model as the application brain.
+
+Use interfaces such as:
+
+ModelProvider
+ChatModel
+VisionModel
+EmbeddingModel
+SpeechToTextProvider
+TextToSpeechProvider
+
+A provider can expose one or multiple capabilities.
+
+3.3 MODULARITY
+
+Separate:
+
+- UI
+- application state
+- agent orchestration
+- model providers
+- memory
+- tools
+- permissions
+- filesystem access
+- project indexing
+- vision
+- voice
+- overlay
+- persistence
+- configuration
+- diagnostics
+
+Modules should communicate through explicit interfaces.
+
+3.4 RESOURCE AWARENESS
+
+The application must be designed for a laptop with limited GPU VRAM.
+
+Do not assume unlimited VRAM, RAM, CPU, storage or battery.
+
+The application should monitor:
+
+- CPU usage,
+- RAM usage,
+- GPU usage,
+- VRAM usage when available,
+- active model,
+- context size,
+- indexing workload,
+- background workload.
+
+Heavy operations should be interruptible.
+
+3.5 EVENT-DRIVEN DESIGN
+
+Do not repeatedly poll expensive systems unnecessarily.
+
+Use events where possible.
+
+Examples:
+
+- file changed,
+- task completed,
+- model became available,
+- screen capture changed,
+- build failed,
+- permission changed,
+- memory candidate created.
+
+3.6 RECOVERABILITY
+
+Important operations should be recoverable.
+
+Use:
+
+- checkpoints,
+- task state,
+- operation logs,
+- rollback mechanisms,
+- safe file editing,
+- atomic writes where appropriate.
+
+3.7 TRANSPARENCY
+
+The user should be able to understand:
+
+- what the AI is doing,
+- what tool it is using,
+- what files it is changing,
+- whether an operation is waiting for permission,
+- whether a task failed,
+- and what happened after completion.
+
+Do not expose chain-of-thought or hidden reasoning.
+
+Instead show concise operational summaries.
+
+3.8 NO FAKE CAPABILITIES
+
+If a provider/model cannot perform a capability, the application must not
+pretend it can.
+
+The application should detect unsupported capabilities and explain them.
+
+3.9 NO UNCONTROLLED SELF-MODIFICATION
+
+The AI may help modify its own source code only through controlled
+development workflows with checkpoints, validation and rollback.
+
+Never allow arbitrary self-modification to bypass safety or permission
+boundaries.
+
+======================================================================
+4. TARGET TECHNOLOGY
+======================================================================
+
+The initial target is a Windows desktop application.
+
+Recommended structure:
+
+- Electron desktop shell
+- TypeScript
+- React-based UI
+- local backend/core process
+- SQLite for structured persistent state
+- local vector/embedding index where useful
+- filesystem-based project/workspace storage
+- provider abstraction for local models
+
+Technology choices may change if OpenCode determines that another choice
+provides a substantially better architecture.
+
+Do not change technologies merely for novelty.
+
+The final build should produce a practical Windows installer, preferably
+a single easy-to-install executable/package.
+
+The application should not require the user to manually configure a large
+number of development dependencies after installation.
+
+======================================================================
+5. HIGH-LEVEL ARCHITECTURE
+======================================================================
+
+Use a layered architecture similar to:
+
+Presentation Layer
+    |
+Application Layer
+    |
+Agent Orchestration Layer
+    |
+Capability/Tool Layer
+    |
+Provider Abstraction Layer
+    |
+Persistence/Index Layer
+    |
+Operating System
+
+Suggested conceptual modules:
+
+/app
+/core
+/agent
+/models
+/providers
+/memory
+/knowledge
+/skills
+/tools
+/files
+/projects
+/vision
+/screen
+/voice
+/overlay
+/permissions
+/tasks
+/storage
+/indexing
+/settings
+/diagnostics
+/ui
+/tests
+
+Exact folder structure may be adjusted during implementation.
+
+======================================================================
+6. MODEL PROVIDER ABSTRACTION
+======================================================================
+
+This is one of the most important architectural requirements.
+
+The finished application must not assume:
+
+"the application uses Qwen Coder 8B."
+
+Instead it should operate approximately like:
+
+Application
+   |
+   +--> Provider Registry
+          |
+          +--> Provider A
+          +--> Provider B
+          +--> Provider C
+          |
+          +--> Model Registry
+                 |
+                 +--> Chat model
+                 +--> Coding model
+                 +--> Vision model
+                 +--> Embedding model
+
+The user should be able to configure which model performs which role.
+
+Possible initial local provider:
+
+Ollama
+
+However, Ollama must be an adapter/provider, not the foundation of the
+entire application.
+
+If technically practical, support generic OpenAI-compatible local endpoints
+as another provider category.
+
+Provider interfaces should support capabilities such as:
+
+- text generation,
+- streaming,
+- tool/function calling,
+- structured output,
+- vision,
+- embeddings where supported,
+- cancellation,
+- model discovery,
+- health checks.
+
+The system should gracefully handle providers that lack some capabilities.
+
+======================================================================
+7. MODEL ROUTING
+======================================================================
+
+Do not use the largest available model for every task.
+
+Create a model router.
+
+Example task classes:
+
+- quick classification,
+- prompt assistance,
+- memory compression,
+- normal chat,
+- complex planning,
+- coding,
+- code review,
+- vision,
+- summarization,
+- extraction.
+
+The router can select models according to:
+
+- capability,
+- available VRAM,
+- context requirement,
+- task complexity,
+- latency,
+- configured user preference,
+- current resource usage.
+
+The user should be able to override routing.
+
+The application should explain model selection at a high level without
+exposing hidden reasoning.
+
+======================================================================
+8. AGENT CORE
+======================================================================
+
+The central agent should follow a controlled loop:
+
+1. Understand request.
+2. Determine whether the request is informational or actionable.
+3. Build a task representation.
+4. Identify relevant context.
+5. Select required capabilities.
+6. Determine required tools.
+7. Check permissions.
+8. Execute operations.
+9. Observe results.
+10. Validate results.
+11. Recover or retry if appropriate.
+12. Update task state.
+13. Store useful long-term information when justified.
+14. Report the result.
+
+The agent should support multi-step tasks.
+
+Example:
+
+"Find why this project crashes, fix it and verify it."
+
+The agent should be able to:
+
+- inspect project,
+- identify likely entry points,
+- inspect logs,
+- reproduce where possible,
+- edit code,
+- run tests/build,
+- inspect errors,
+- iterate,
+- verify,
+- summarize changes.
+
+Do not claim success without verification when verification is possible.
+
+======================================================================
+9. TASK SYSTEM
+======================================================================
+
+Every substantial agent operation should have a task object.
+
+Task state may include:
+
+- ID
+- title
+- user request
+- status
+- priority
+- created time
+- current phase
+- involved files
+- tools used
+- model/provider
+- checkpoints
+- errors
+- verification result
+- final summary
+
+Task states:
+
+- queued
+- analyzing
+- waiting_for_permission
+- executing
+- verifying
+- completed
+- failed
+- cancelled
+- paused
+
+The user must be able to stop active work.
+
+Long tasks must not freeze the UI.
+
+======================================================================
+10. TOOL SYSTEM
+======================================================================
+
+Tools should be first-class modules.
+
+Examples:
+
+Filesystem:
+- list directory
+- read file
+- search files
+- write file
+- patch file
+- move/rename
+- create directory
+
+Development:
+- run command
+- run tests
+- run build
+- inspect logs
+- inspect diagnostics
+- compare changes
+
+Computer context:
+- screenshot
+- screen capture
+- active-window information where supported
+- application information where supported
+
+Knowledge:
+- search memory
+- search indexed project
+- search imported documents
+
+System:
+- inspect resource state
+- provider health check
+- application diagnostics
+
+Tools must return structured results.
+
+Avoid giving the model raw uncontrolled system output where a structured
+representation is possible.
+
+======================================================================
+11. PERMISSION SYSTEM
+======================================================================
+
+The user wants the AI to be capable of working with the computer.
+
+This must be implemented through a permission system, not by giving every
+tool unlimited invisible access.
+
+Permission categories can include:
+
+- read files
+- modify files
+- delete files
+- execute commands
+- launch programs
+- inspect screen
+- capture screen
+- access microphone
+- access camera if ever implemented
+- access network
+- modify project
+- install software
+
+Permission modes:
+
+SAFE
+- read-only by default
+- confirmations for changes
+
+BALANCED
+- normal operations allowed
+- sensitive/destructive actions require confirmation
+
+ADVANCED
+- broader automation
+- still blocks clearly destructive or dangerous operations unless explicitly
+  authorized
+
+The user can configure permissions.
+
+The system must clearly show when permission is required.
+
+======================================================================
+12. FILE AND DOCUMENT SYSTEM
+======================================================================
+
+The AI should understand many common file types.
+
+Implement a file ingestion architecture based on adapters.
+
+Possible categories:
+
+- TXT
+- Markdown
+- JSON
+- CSV
+- source code
+- configuration files
+- logs
+- HTML
+- XML
+- PDF where supported
+- DOCX where supported
+- images
+- audio
+- video metadata/content where practical
+
+Do not load entire huge files into context.
+
+Use:
+
+- metadata extraction,
+- chunking,
+- indexing,
+- semantic retrieval,
+- exact search,
+- summarization,
+- context selection.
+
+The system should preserve relationships between files.
+
+======================================================================
+13. PROJECT UNDERSTANDING
+======================================================================
+
+The AI should be able to understand a project directory as a system rather
+than treating each file independently.
+
+The project index should identify:
+
+- project type,
+- languages,
+- frameworks,
+- dependencies,
+- entry points,
+- configuration,
+- scripts,
+- tests,
+- documentation,
+- important directories,
+- generated files,
+- ignored files.
+
+Use project-aware context.
+
+For coding tasks, prioritize relevant files rather than dumping the entire
+repository into the model context.
+
+Support incremental re-indexing.
+
+A changed file should not force a complete project re-index unless necessary.
+
+======================================================================
+14. CODING ENGINE
+======================================================================
+
+The coding subsystem is a major capability.
+
+It should support:
+
+- code generation,
+- code editing,
+- refactoring,
+- debugging,
+- explanation,
+- tests,
+- documentation,
+- project setup,
+- dependency analysis,
+- build troubleshooting,
+- error analysis.
+
+Before editing:
+
+1. inspect relevant code,
+2. understand project structure,
+3. identify constraints,
+4. plan changes.
+
+After editing:
+
+1. run appropriate checks,
+2. inspect results,
+3. fix failures where reasonable,
+4. verify final state.
+
+Use patch-based edits where practical.
+
+Maintain change history.
+
+Create checkpoints before risky modifications.
+
+Never silently overwrite important files without respecting configured
+permissions.
+
+======================================================================
+15. AUTONOMOUS DEBUGGING
+======================================================================
+
+For a debugging task:
+
+- collect error information,
+- inspect stack traces/logs,
+- inspect relevant source,
+- identify likely causes,
+- make the smallest reasonable change,
+- run verification,
+- compare before/after,
+- repeat if useful.
+
+If verification cannot be performed, explicitly state that.
+
+Avoid infinite retry loops.
+
+Use bounded retries.
+
+======================================================================
+16. MEMORY SYSTEM
+======================================================================
+
+The application needs persistent memory, but memory must not become an
+unbounded transcript.
+
+Separate memory into categories.
+
+Short-term:
+- current conversation
+- current task
+- recent context
+
+Working memory:
+- active project facts
+- current task assumptions
+- temporary decisions
+
+Long-term memory:
+- stable preferences
+- important user-provided facts
+- useful workflow knowledge
+- project-specific knowledge
+
+Episodic/task memory:
+- what happened during previous tasks
+- successful solutions
+- failed approaches where useful
+
+Skill memory:
+- reusable procedures learned from successful work
+
+Memory entries should have metadata:
+
+- type
+- importance
+- source
+- confidence
+- timestamp
+- last used
+- scope
+- related project/task
+- embedding if available
+
+======================================================================
+17. MEMORY COMPRESSION
+======================================================================
+
+The application must prevent memory growth from slowing down the AI.
+
+Do not repeatedly inject the entire history.
+
+Instead:
+
+1. collect candidate information,
+2. determine whether it has lasting value,
+3. summarize/compress it,
+4. remove redundancy,
+5. store compact structured knowledge,
+6. index it,
+7. retrieve only relevant entries later.
+
+Memory maintenance should periodically:
+
+- merge duplicates,
+- remove obsolete entries,
+- update summaries,
+- reduce redundancy,
+- preserve important details.
+
+The goal is:
+
+MORE EXPERIENCE WITHOUT PROPORTIONAL CONTEXT GROWTH.
+
+======================================================================
+18. LEARNING SYSTEM
+======================================================================
+
+"Learning" in this project means controlled improvement based on stored
+experience.
+
+It does not mean uncontrolled self-training of the language model.
+
+The system can learn:
+
+- user preferences,
+- repeated workflows,
+- project conventions,
+- successful procedures,
+- tool usage patterns,
+- corrections made by the user,
+- preferred response/action styles.
+
+Example:
+
+If the user repeatedly performs a certain project setup procedure and
+confirms that it works, the AI may eventually recognize it as a reusable
+workflow.
+
+Learned workflows must be reviewable and removable.
+
+Do not store every interaction automatically.
+
+======================================================================
+19. SKILL SYSTEM
+======================================================================
+
+Skills are reusable capabilities/workflows.
+
+A skill can contain:
+
+- name,
+- description,
+- prerequisites,
+- required tools,
+- instructions,
+- examples,
+- verification method,
+- confidence,
+- version,
+- source.
+
+Skills should be dynamically discoverable.
+
+The agent should select relevant skills automatically.
+
+Skills should not bypass permissions.
+
+======================================================================
+20. PROMPT-AS-YOU-TYPE ASSISTANT
+======================================================================
+
+This is a distinct lightweight subsystem.
+
+While the user is typing an unfinished prompt, the application may analyze
+the current text and suggest:
+
+- missing requirements,
+- unclear wording,
+- useful constraints,
+- missing technical details,
+- contradictory requirements,
+- useful output format,
+- relevant files/projects,
+- possible interpretation problems.
+
+Important:
+
+The full agent must NOT process every keystroke.
+
+The prompt assistant should be lightweight and throttled/debounced.
+
+Possible behavior:
+
+User types:
+
+"make my app faster"
+
+The prompt assistant may identify that useful details could include:
+
+- which part is slow,
+- expected behavior,
+- platform,
+- current symptoms,
+- whether correctness or speed is more important.
+
+Suggestions should be optional.
+
+Do not constantly interrupt the user.
+
+The user should be able to disable the feature.
+
+======================================================================
+21. SCREEN UNDERSTANDING
+======================================================================
+
+The application should support screenshots and screen analysis.
+
+Possible functions:
+
+- capture screen,
+- capture selected region,
+- analyze screenshot,
+- identify visible UI elements,
+- explain what is visible,
+- use screenshot as task context.
+
+The system should avoid capturing continuously unless the user explicitly
+enables continuous monitoring.
+
+Screen context should be ephemeral by default.
+
+Do not permanently store every screenshot.
+
+======================================================================
+22. SCREEN RECORDING ANALYSIS
+======================================================================
+
+The application should support analyzing screen recordings where technically
+practical.
+
+Workflow:
+
+1. import recording,
+2. extract relevant frames,
+3. identify important events,
+4. summarize sequence,
+5. answer user questions about the recording.
+
+Do not process every frame at maximum resolution unnecessarily.
+
+Use adaptive sampling.
+
+======================================================================
+23. DESKTOP OVERLAY
+======================================================================
+
+Optional desktop overlay.
+
+The overlay should be:
+
+- lightweight,
+- movable,
+- resizable,
+- dismissible,
+- configurable,
+- unobtrusive.
+
+It may show:
+
+- short suggestions,
+- task status,
+- AI responses,
+- debugging information,
+- contextual help.
+
+It must not interfere with normal computer use.
+
+It should support a gaming-friendly low-resource mode.
+
+No intrusive popups unless explicitly enabled.
+
+======================================================================
+24. VOICE SYSTEM
+======================================================================
+
+The project should support local voice interaction where technically practical.
+
+Separate:
+
+Speech-to-Text
+from
+Text-to-Speech.
+
+Both must use provider abstractions.
+
+Possible local backends can be added through adapters.
+
+The finished application must not depend on one specific voice model.
+
+The voice should aim to sound natural rather than obviously synthetic.
+
+Features:
+
+- push-to-talk,
+- optional wake interaction if technically practical,
+- interruption,
+- streaming speech output where supported,
+- voice activity detection where practical,
+- adjustable speed/volume,
+- voice selection.
+
+Voice must be optional.
+
+======================================================================
+25. MULTIMODAL ARCHITECTURE
+======================================================================
+
+Do not assume every runtime model can see images, hear audio, or understand
+video.
+
+Represent capabilities explicitly.
+
+Example:
+
+ModelCapabilities:
+- text
+- vision
+- audio
+- tool_calling
+- structured_output
+- embeddings
+
+The agent should route multimodal requests to compatible providers/models.
+
+If unavailable, explain the limitation.
+
+======================================================================
+26. COMPUTER ASSISTANT
+======================================================================
+
+The AI should be able to interact with the user's computer through approved
+tools.
+
+Potential capabilities:
+
+- inspect files,
+- create/edit files,
+- run programs,
+- execute commands,
+- inspect project state,
+- read visible screen context,
+- assist with application workflows.
+
+Actions must be permission-controlled.
+
+For destructive actions, require confirmation unless the user has explicitly
+configured a trusted workflow.
+
+======================================================================
+27. PROACTIVE BEHAVIOR
+======================================================================
+
+The AI should feel present without becoming annoying.
+
+It can proactively help when there is a strong reason.
+
+Examples:
+
+- a build just failed and the user is working on the project,
+- a known error appears repeatedly,
+- a task is waiting for a decision,
+- a project operation completed,
+- a requested background operation finished.
+
+Avoid:
+
+- random messages,
+- unnecessary notifications,
+- constant suggestions,
+- fake emotional behavior,
+- artificial "personality" interruptions.
+
+The system should use confidence thresholds.
+
+======================================================================
+28. "LIVING" FEEL WITHOUT PRETENDING TO BE A PERSON
+======================================================================
+
+The user wants the AI to feel alive and less scripted.
+
+Implement this through:
+
+- continuity,
+- memory,
+- awareness of current task,
+- context-sensitive behavior,
+- natural interaction,
+- proactive but restrained assistance,
+- consistent personality configuration,
+- learning from confirmed interactions.
+
+Do not claim the software is conscious or sentient.
+
+The goal is a convincing and useful sense of continuity, not deception.
+
+======================================================================
+29. CONTEXT ENGINE
+======================================================================
+
+Create a central context engine.
+
+Possible context sources:
+
+- current conversation,
+- active task,
+- selected project,
+- relevant files,
+- memory,
+- skills,
+- screen context,
+- system state,
+- provider state.
+
+The context engine must rank information.
+
+Do not inject everything.
+
+Context should be:
+
+- relevant,
+- compact,
+- fresh,
+- deduplicated.
+
+======================================================================
+30. CONTEXT COMPRESSION
+======================================================================
+
+When context becomes large:
+
+1. preserve critical instructions,
+2. preserve current task state,
+3. preserve relevant facts,
+4. summarize old dialogue,
+5. remove redundant information,
+6. keep references to source data.
+
+Never compress away critical information silently.
+
+======================================================================
+31. GLOBAL FILE INDEX
+======================================================================
+
+Optionally maintain an index of user-selected directories.
+
+The user must choose what is indexed.
+
+Never assume every personal file should automatically be indexed.
+
+Store metadata efficiently.
+
+Use incremental updates.
+
+Provide:
+
+- pause indexing,
+- exclude directory,
+- remove index,
+- rebuild index,
+- show indexed locations.
+
+======================================================================
+32. SEARCH
+======================================================================
+
+Support multiple search strategies:
+
+- exact text search,
+- filename search,
+- metadata search,
+- semantic search,
+- project-aware search.
+
+Use the cheapest appropriate method first.
+
+For example:
+
+If the user asks for an exact filename, do not invoke an expensive semantic
+model unnecessarily.
+
+======================================================================
+33. STORAGE
+======================================================================
+
+Use SQLite for structured state where appropriate.
+
+Potential tables:
+
+usersettings
+providers
+models
+conversations
+messages
+tasks
+task_events
+memory_entries
+skills
+projects
+project_files
+file_index
+tool_runs
+permissions
+checkpoints
+learning_events
+diagnostics
+
+Do not store huge binary files directly in SQLite unless there is a strong
+reason.
+
+Use filesystem storage for large artifacts.
+
+======================================================================
+34. CONVERSATION STORAGE
+======================================================================
+
+Store conversations locally.
+
+Conversation history should be searchable.
+
+But the runtime model should not receive the entire database every time.
+
+Use retrieval.
+
+Each conversation can have:
+
+- title,
+- timestamps,
+- messages,
+- summary,
+- topics,
+- linked tasks,
+- linked projects,
+- memory candidates.
+
+======================================================================
+35. SECURITY
+======================================================================
+
+Local does not automatically mean secure.
+
+Protect:
+
+- application database,
+- configuration,
+- model endpoints,
+- API keys if optional providers are ever supported,
+- permission settings,
+- file access.
+
+Never place secrets in logs.
+
+Avoid executing arbitrary model-generated commands without the configured
+permission system.
+
+======================================================================
+36. COMMAND EXECUTION
+======================================================================
+
+Command execution is powerful and potentially destructive.
+
+Implement:
+
+- command preview,
+- working directory,
+- environment handling,
+- timeout,
+- cancellation,
+- output capture,
+- exit code,
+- permission checks.
+
+Dangerous or destructive operations should require confirmation unless the
+user has explicitly configured a trusted workflow.
+
+Prevent accidental infinite processes.
+
+======================================================================
+37. CHECKPOINT AND ROLLBACK SYSTEM
+======================================================================
+
+Before substantial file modifications:
+
+- create a checkpoint where practical,
+- record affected files,
+- record operation metadata.
+
+The user should be able to restore a checkpoint.
+
+Git integration is highly desirable for coding projects.
+
+Do not assume every directory is a Git repository.
+
+======================================================================
+38. VERIFICATION ENGINE
+======================================================================
+
+Every meaningful autonomous action should have an appropriate verification
+strategy.
+
+Examples:
+
+Code change:
+- tests,
+- type checking,
+- build,
+- lint,
+- targeted execution.
+
+File operation:
+- confirm file exists,
+- verify expected contents.
+
+Configuration:
+- parse/validate configuration.
+
+Project setup:
+- install/build/run verification where practical.
+
+If no verification is possible, say so.
+
+======================================================================
+39. ERROR HANDLING
+======================================================================
+
+Errors are expected.
+
+The application should distinguish:
+
+- user error,
+- model error,
+- tool error,
+- provider error,
+- timeout,
+- permission denial,
+- filesystem error,
+- invalid state,
+- resource exhaustion.
+
+The UI should provide useful recovery actions.
+
+Examples:
+
+- retry,
+- change provider,
+- reduce context,
+- stop task,
+- restore checkpoint,
+- inspect logs.
+
+Never display meaningless raw stack traces as the only explanation.
+
+======================================================================
+40. RESOURCE MANAGER
+======================================================================
+
+The application should monitor available resources.
+
+Create operating modes such as:
+
+LOW_RESOURCE
+BALANCED
+PERFORMANCE
+
+Low resource mode can:
+
+- reduce background indexing,
+- reduce vision resolution,
+- use smaller models,
+- reduce context,
+- pause nonessential services.
+
+Performance mode can use more available resources.
+
+The user can override automatic decisions.
+
+======================================================================
+41. BACKGROUND WORK
+======================================================================
+
+Background work includes:
+
+- indexing,
+- memory maintenance,
+- skill maintenance,
+- provider discovery,
+- diagnostics.
+
+Background tasks must be:
+
+- cancellable,
+- resource-aware,
+- prioritized,
+- visible when significant.
+
+Never allow maintenance to make the main application unusably slow.
+
+======================================================================
+42. FEATURE DISCOVERY
+======================================================================
+
+The application should be extensible.
+
+New capabilities should ideally be added as modules/plugins rather than
+requiring major changes to the core.
+
+Possible extension categories:
+
+- model providers,
+- tools,
+- importers,
+- skills,
+- UI panels,
+- voice providers,
+- vision providers.
+
+Extensions must declare:
+
+- name,
+- version,
+- capabilities,
+- permissions,
+- dependencies.
+
+======================================================================
+43. UI DESIGN
+======================================================================
+
+The UI should feel like a real application, not a developer prototype.
+
+Main areas may include:
+
+- conversation,
+- agent/task status,
+- project/workspace,
+- memory/knowledge,
+- tools,
+- settings,
+- provider/model configuration,
+- diagnostics.
+
+Avoid clutter.
+
+The most important interaction is:
+
+USER -> REQUEST -> AI -> ACTION -> RESULT
+
+The user should always be able to understand the current state.
+
+======================================================================
+44. MAIN CHAT/AGENT INTERFACE
+======================================================================
+
+The input area should support:
+
+- normal text,
+- multiline prompts,
+- attachments,
+- project selection,
+- voice input,
+- prompt suggestions.
+
+The UI should distinguish:
+
+- response,
+- action,
+- tool execution,
+- permission request,
+- error,
+- verification.
+
+Do not make tool logs dominate the conversation.
+
+======================================================================
+45. PROMPT EDITOR EXPERIENCE
+======================================================================
+
+The prompt assistant can show subtle suggestions such as:
+
+"Possible missing requirement"
+
+"Do you want to specify the target folder?"
+
+"Your request may have two interpretations."
+
+The user can:
+
+- accept,
+- ignore,
+- edit,
+- disable suggestions.
+
+Do not rewrite user prompts without consent.
+
+======================================================================
+46. OVERLAY UI
+======================================================================
+
+The overlay should be independently closable.
+
+Possible modes:
+
+- compact,
+- expanded,
+- task-only,
+- transparent assistance.
+
+It should have low CPU/GPU impact.
+
+It must not steal focus unnecessarily.
+
+======================================================================
+47. SETTINGS
+======================================================================
+
+Settings should include:
+
+General
+- language
+- theme
+- startup behavior
+
+AI
+- provider
+- model
+- routing
+- context size
+- temperature/related options when supported
+
+Memory
+- enable/disable
+- retention
+- compression
+- review
+
+Tools
+- permissions
+- command execution
+- filesystem scope
+
+Vision
+- capture settings
+
+Voice
+- STT
+- TTS
+- voice
+
+Overlay
+- position
+- opacity
+- hotkey
+- behavior
+
+Performance
+- resource mode
+- background limits
+
+Diagnostics
+- logs
+- health checks
+- export diagnostics
+
+======================================================================
+48. LOCAL-ONLY OPERATION
+======================================================================
+
+The application should clearly identify whether a feature requires network
+access.
+
+Default core operation should remain local.
+
+If a feature attempts to use a remote service, the user should know.
+
+Do not silently upload private project files or conversation content.
+
+======================================================================
+49. OPTIONAL INTERNET LAYER
+======================================================================
+
+Internet access can exist as an optional capability.
+
+Examples:
+
+- documentation lookup,
+- software information,
+- optional web research.
+
+But web access must be isolated behind a capability/provider layer.
+
+The core personal memory and project system should not depend on the web.
+
+======================================================================
+50. SELF-DIAGNOSTICS
+======================================================================
+
+Create an internal diagnostic subsystem.
+
+It should test:
+
+- database,
+- provider connectivity,
+- model availability,
+- storage,
+- indexing,
+- permissions,
+- tool availability,
+- voice providers,
+- vision providers.
+
+Provide a health screen.
+
+Example status:
+
+OK
+WARNING
+ERROR
+UNAVAILABLE
+
+Include actionable recovery information.
+
+======================================================================
+51. CRASH RECOVERY
+======================================================================
+
+The application should recover gracefully from:
+
+- model provider crash,
+- tool failure,
+- UI crash where possible,
+- interrupted task,
+- incomplete file operation,
+- database transaction failure.
+
+Persist important task state.
+
+On restart, show interrupted tasks and offer recovery.
+
+======================================================================
+52. LOGGING
+======================================================================
+
+Logs should be useful for debugging.
+
+Include:
+
+- timestamp,
+- subsystem,
+- severity,
+- event,
+- task ID where relevant.
+
+Do not log sensitive content unnecessarily.
+
+Provide configurable log levels.
+
+======================================================================
+53. OBSERVABILITY
+======================================================================
+
+The application should expose enough information to diagnose:
+
+- slow responses,
+- high memory usage,
+- provider errors,
+- indexing bottlenecks,
+- repeated tool failures.
+
+Do not require the user to inspect internal logs for ordinary failures.
+
+======================================================================
+54. MODEL CONTEXT AND TOKEN EFFICIENCY
+======================================================================
+
+Context is a limited resource.
+
+Implement:
+
+- retrieval,
+- summarization,
+- deduplication,
+- relevance ranking,
+- context budgets.
+
+Different tasks should have different context strategies.
+
+Coding tasks should prioritize relevant source files.
+
+Normal conversation should prioritize recent conversation and relevant
+long-term memory.
+
+======================================================================
+55. PERFORMANCE REQUIREMENTS
+======================================================================
+
+The application should:
+
+- start quickly,
+- keep UI responsive,
+- stream responses when supported,
+- cancel generation,
+- avoid unnecessary model calls,
+- cache reusable results,
+- perform background work asynchronously.
+
+The prompt assistant should be substantially lighter than the main agent.
+
+Do not use a large model for trivial classification if a cheaper mechanism
+is sufficient.
+
+======================================================================
+56. RESOURCE-AWARE MODEL MANAGEMENT
+======================================================================
+
+When multiple models exist:
+
+- do not load unnecessary models simultaneously,
+- unload models when possible,
+- avoid VRAM thrashing,
+- prefer compatible smaller models for lightweight tasks.
+
+The model provider layer should expose health and resource information
+where the backend allows it.
+
+======================================================================
+57. USER EXPERIENCE PHILOSOPHY
+======================================================================
+
+The application should understand imperfect natural language.
+
+The user may type:
+
+"mach das schneller"
+
+"guck mal warum das nicht geht"
+
+"bau mir das in mein projekt"
+
+"mach das wie eben aber besser"
+
+The system should use context to interpret such requests.
+
+If ambiguity is harmless, make a reasonable assumption and state it.
+
+If ambiguity could cause an important or destructive action, ask.
+
+======================================================================
+58. QUESTION-ASKING POLICY
+======================================================================
+
+The agent should not ask unnecessary questions.
+
+Ask when:
+
+- critical information is missing,
+- multiple materially different interpretations exist,
+- an important destructive action needs confirmation,
+- permissions are required,
+- the task cannot safely continue.
+
+Otherwise proceed with reasonable assumptions.
+
+======================================================================
+59. PROACTIVE CONTEXT
+======================================================================
+
+The AI may notice useful contextual signals, but only within configured
+permissions.
+
+Examples:
+
+- active project,
+- selected file,
+- current task,
+- recent build result.
+
+Do not constantly monitor everything by default.
+
+======================================================================
+60. PERSONALITY
+======================================================================
+
+The user should be able to configure personality.
+
+Personality must not override accuracy.
+
+Possible controls:
+
+- concise/detailed,
+- formal/casual,
+- proactive level,
+- technical depth.
+
+Avoid excessive roleplay.
+
+======================================================================
+61. KNOWLEDGE VS MEMORY
+======================================================================
+
+Separate:
+
+MEMORY:
+information about the user, tasks and past interactions.
+
+KNOWLEDGE:
+imported/reference information such as documents and project material.
+
+SKILLS:
+reusable procedures.
+
+These systems may be searched together by the context engine but must remain
+conceptually distinct.
+
+======================================================================
+62. IMPORT PIPELINE
+======================================================================
+
+Create an extensible importer architecture.
+
+Importer lifecycle:
+
+detect
+  -> parse
+  -> extract metadata
+  -> normalize
+  -> chunk
+  -> summarize if useful
+  -> index
+  -> store source reference
+
+Do not blindly embed every byte.
+
+======================================================================
+63. RAG / RETRIEVAL
+======================================================================
+
+Use retrieval where appropriate.
+
+Pipeline:
+
+query
+ -> classify intent
+ -> determine sources
+ -> retrieve candidates
+ -> rank
+ -> deduplicate
+ -> compress
+ -> inject relevant context
+
+Include source references internally so the UI can explain where information
+came from when useful.
+
+======================================================================
+64. MEMORY RETRIEVAL
+======================================================================
+
+Memory search should consider:
+
+- semantic relevance,
+- recency,
+- importance,
+- confidence,
+- scope,
+- project relevance.
+
+Do not retrieve irrelevant memories simply because they are semantically
+similar.
+
+======================================================================
+65. LEARNING FROM CORRECTIONS
+======================================================================
+
+When the user corrects the AI, the system may create a learning candidate.
+
+Example:
+
+AI chooses a workflow.
+
+User corrects it.
+
+System records:
+
+- previous behavior,
+- correction,
+- context,
+- whether the correction appears reusable.
+
+Only promote it to long-term knowledge when confidence is sufficient.
+
+======================================================================
+66. TASK EXPERIENCE
+======================================================================
+
+The application should remember successful task outcomes.
+
+For example:
+
+"Last time this project failed for the same reason, solution X worked."
+
+This information should be retrieved when relevant.
+
+Do not blindly repeat old solutions.
+
+Validate them against the current project state.
+
+======================================================================
+67. SELF-IMPROVEMENT OF SOFTWARE
+======================================================================
+
+The application can assist with improving its own source code, but this is a
+special development workflow.
+
+Required workflow:
+
+1. identify improvement,
+2. create development checkpoint,
+3. inspect current code,
+4. plan change,
+5. modify code,
+6. run tests,
+7. build,
+8. verify,
+9. keep or rollback.
+
+The runtime application must not silently rewrite its own executable or
+security boundaries.
+
+======================================================================
+68. DEVELOPMENT WORKFLOW FOR OPENCODE
+======================================================================
+
+OpenCode is the development environment.
+
+Qwen Coder 8B is the development coding model.
+
+OpenCode must use this document as the source of truth.
+
+Before implementing a feature:
+
+1. inspect the repository,
+2. inspect existing architecture,
+3. identify dependencies,
+4. identify affected modules,
+5. make a plan,
+6. implement incrementally.
+
+Never blindly generate the entire project in one uncontrolled step.
+
+======================================================================
+69. OPENCODE IMPLEMENTATION RULES
+======================================================================
+
+RULE 1:
+Do not rewrite working code without a reason.
+
+RULE 2:
+Do not duplicate existing functionality.
+
+RULE 3:
+Inspect files before modifying them.
+
+RULE 4:
+Keep modules small and understandable.
+
+RULE 5:
+Use typed interfaces.
+
+RULE 6:
+Validate external input.
+
+RULE 7:
+Do not hard-code the runtime AI model.
+
+RULE 8:
+Do not hard-code Ollama into the core.
+
+RULE 9:
+Do not make the finished app depend on OpenCode.
+
+RULE 10:
+Do not make the finished app depend on Qwen Coder 8B.
+
+RULE 11:
+Do not claim a feature is finished until it has been tested.
+
+RULE 12:
+Keep the application buildable after every meaningful phase.
+
+RULE 13:
+Use checkpoints/Git before risky changes.
+
+RULE 14:
+Prefer small verified changes over massive untested changes.
+
+RULE 15:
+Do not add unrelated features.
+
+======================================================================
+70. DEVELOPMENT PHASES
+======================================================================
+
+PHASE 0 — REPOSITORY AND DEVELOPMENT FOUNDATION
+
+Create:
+
+- repository structure,
+- TypeScript configuration,
+- Electron shell,
+- React UI foundation,
+- local core process,
+- development scripts,
+- linting,
+- formatting,
+- test framework,
+- basic logging.
+
+Acceptance:
+The empty application starts and builds.
+
+----------------------------------------------------------------------
+PHASE 1 — CORE APPLICATION SHELL
+
+Implement:
+
+- application lifecycle,
+- configuration,
+- SQLite,
+- event bus,
+- task system foundation,
+- diagnostics foundation.
+
+Acceptance:
+The app starts, persists settings and reports health.
+
+----------------------------------------------------------------------
+PHASE 2 — PROVIDER ABSTRACTION
+
+Implement:
+
+- provider interfaces,
+- model registry,
+- capability system,
+- provider discovery,
+- health checks,
+- streaming,
+- cancellation.
+
+Add an initial local provider adapter.
+
+Acceptance:
+A runtime model can be selected without changing agent code.
+
+----------------------------------------------------------------------
+PHASE 3 — BASIC CHAT
+
+Implement:
+
+- conversation storage,
+- message streaming,
+- model selection,
+- context handling,
+- cancellation.
+
+Acceptance:
+The user can have a fully local conversation through a configurable
+provider.
+
+----------------------------------------------------------------------
+PHASE 4 — TOOL SYSTEM
+
+Implement:
+
+- tool registry,
+- structured tool calls,
+- permissions,
+- filesystem tools,
+- command tool,
+- diagnostics tool.
+
+Acceptance:
+The AI can safely perform basic approved local actions.
+
+----------------------------------------------------------------------
+PHASE 5 — AGENT ENGINE
+
+Implement:
+
+- task representation,
+- planning,
+- tool execution,
+- observation,
+- verification,
+- retries,
+- cancellation.
+
+Acceptance:
+A multi-step task can execute and report verified results.
+
+----------------------------------------------------------------------
+PHASE 6 — PROJECT/CODING ENGINE
+
+Implement:
+
+- project discovery,
+- project index,
+- code context retrieval,
+- patch editing,
+- checkpoints,
+- test/build execution.
+
+Acceptance:
+The agent can inspect and modify a real project and verify changes.
+
+----------------------------------------------------------------------
+PHASE 7 — MEMORY AND KNOWLEDGE
+
+Implement:
+
+- memory storage,
+- summaries,
+- retrieval,
+- compression,
+- project knowledge,
+- conversation search.
+
+Acceptance:
+Relevant past knowledge can be reused without loading the entire history.
+
+----------------------------------------------------------------------
+PHASE 8 — SKILLS AND LEARNING
+
+Implement:
+
+- skill registry,
+- skill retrieval,
+- workflow memory,
+- correction learning,
+- confidence management.
+
+Acceptance:
+Repeated useful workflows can become reusable skills.
+
+----------------------------------------------------------------------
+PHASE 9 — MULTIMODAL
+
+Implement:
+
+- screenshot input,
+- vision provider interface,
+- file/image import,
+- screen recording analysis pipeline.
+
+Acceptance:
+Supported models can analyze visual context.
+
+----------------------------------------------------------------------
+PHASE 10 — VOICE
+
+Implement:
+
+- STT interface,
+- TTS interface,
+- push-to-talk,
+- streaming where supported,
+- local voice configuration.
+
+Acceptance:
+A local voice interaction path works with a supported backend.
+
+----------------------------------------------------------------------
+PHASE 11 — PROMPT ASSISTANT
+
+Implement:
+
+- lightweight prompt analysis,
+- debounce/throttle,
+- suggestions,
+- accept/ignore,
+- settings.
+
+Acceptance:
+The assistant can help improve incomplete prompts without invoking the
+full agent for every keystroke.
+
+----------------------------------------------------------------------
+PHASE 12 — OVERLAY
+
+Implement:
+
+- transparent overlay,
+- task display,
+- contextual assistance,
+- hotkey,
+- low-resource mode.
+
+Acceptance:
+Overlay works without significantly interfering with desktop usage.
+
+----------------------------------------------------------------------
+PHASE 13 — PROACTIVE BEHAVIOR
+
+Implement:
+
+- event triggers,
+- confidence thresholds,
+- notification policy,
+- quiet behavior,
+- user controls.
+
+Acceptance:
+The AI can proactively assist when strongly relevant without becoming
+annoying.
+
+----------------------------------------------------------------------
+PHASE 14 — OPTIMIZATION
+
+Measure:
+
+- startup time,
+- UI responsiveness,
+- memory use,
+- CPU,
+- GPU/VRAM where available,
+- model latency,
+- indexing latency.
+
+Optimize actual bottlenecks.
+
+Do not optimize blindly.
+
+----------------------------------------------------------------------
+PHASE 15 — RECOVERY AND HARDENING
+
+Test:
+
+- provider failure,
+- model unavailable,
+- tool failure,
+- interrupted task,
+- database error,
+- file conflict,
+- invalid configuration,
+- resource exhaustion.
+
+Acceptance:
+Failures produce understandable recovery behavior.
+
+----------------------------------------------------------------------
+PHASE 16 — INSTALLER
+
+Create a simple Windows installation experience.
+
+The finished user should not need to understand the source code.
+
+Provide:
+
+- installer,
+- first-start wizard,
+- provider setup,
+- model setup,
+- permission setup,
+- diagnostics.
+
+======================================================================
+71. FIRST START EXPERIENCE
+======================================================================
+
+First launch should guide the user through:
+
+1. application initialization,
+2. local storage setup,
+3. provider discovery,
+4. model selection,
+5. optional vision setup,
+6. optional voice setup,
+7. permission preferences,
+8. workspace selection,
+9. resource mode.
+
+Do not force optional features.
+
+======================================================================
+72. TESTING STRATEGY
+======================================================================
+
+Tests should exist at multiple levels.
+
+Unit:
+- provider logic,
+- memory logic,
+- context ranking,
+- permissions,
+- parsing.
+
+Integration:
+- provider + agent,
+- agent + tools,
+- memory + retrieval,
+- project indexing + coding.
+
+End-to-end:
+- user request,
+- agent task,
+- tool calls,
+- verification,
+- final result.
+
+Performance:
+- startup,
+- indexing,
+- context generation,
+- UI responsiveness.
+
+Failure:
+- unavailable model,
+- broken provider,
+- denied permission,
+- command timeout.
+
+======================================================================
+73. EVALUATION SCENARIOS
+======================================================================
+
+Create realistic evaluation tasks.
+
+Example A:
+"Read this project and explain how it works."
+
+Example B:
+"Find the error and fix it."
+
+Example C:
+"Remember that I prefer this workflow."
+
+Example D:
+"Use what we learned previously."
+
+Example E:
+"Look at this screenshot and explain the problem."
+
+Example F:
+"Improve my unfinished prompt."
+
+Example G:
+"Perform a multi-step local file task."
+
+Example H:
+"Continue an interrupted task."
+
+The system must be evaluated on correctness, not just whether a UI element
+exists.
+
+======================================================================
+74. DEFINITION OF DONE
+======================================================================
+
+The project is not done because:
+
+- the UI looks finished,
+- code compiles once,
+- a demo works,
+- a model produces text.
+
+The project is done when:
+
+- the application installs,
+- starts reliably,
+- uses a configurable local runtime model,
+- stores conversations,
+- retrieves useful memory,
+- understands projects,
+- can use approved tools,
+- handles permissions,
+- executes multi-step tasks,
+- verifies meaningful actions,
+- supports coding workflows,
+- handles failures,
+- remains responsive,
+- supports the planned multimodal architecture,
+- and has automated tests for critical systems.
+
+======================================================================
+75. FINAL ARCHITECTURAL CHECK
+======================================================================
+
+Before release, explicitly verify:
+
+[ ] Qwen Coder 8B is development-only.
+[ ] OpenCode is development-only.
+[ ] The finished app does not depend on OpenCode.
+[ ] The finished app does not depend on Qwen Coder 8B.
+[ ] The runtime model is configurable.
+[ ] The runtime provider is configurable.
+[ ] Ollama is an adapter, not the application core.
+[ ] Agent logic is model-independent.
+[ ] Memory is independent of a specific model.
+[ ] Skills are independent of a specific model.
+[ ] Vision is capability-based.
+[ ] Voice is provider-based.
+[ ] Tools are permission-controlled.
+[ ] File access is scoped.
+[ ] Command execution is controlled.
+[ ] Important modifications can be recovered.
+[ ] Context is retrieved rather than dumped.
+[ ] Memory is compressed.
+[ ] Background work is resource-aware.
+[ ] UI remains responsive.
+[ ] Tasks are cancellable.
+[ ] Errors are recoverable.
+[ ] Tests exist.
+[ ] Installer works.
+[ ] No unrelated feature bloat has been introduced.
+
+======================================================================
+76. FINAL INSTRUCTION TO OPENCODE + QWEN CODER 8B
+======================================================================
+
+You are the development system responsible for implementing this project.
+
+OpenCode is the orchestration/development environment.
+
+Qwen Coder 8B is your coding/development model.
+
+Do NOT interpret Qwen Coder 8B as the required brain of the final product.
+
+Your job is to build the finished local personal AI application described
+in this specification.
+
+Work incrementally.
+
+At the beginning:
+
+1. inspect the repository,
+2. determine what already exists,
+3. identify missing foundation,
+4. create an implementation roadmap,
+5. start with the smallest correct foundation.
+
+For every phase:
+
+1. explain the implementation goal briefly,
+2. inspect existing code,
+3. implement,
+4. run relevant tests,
+5. build,
+6. fix errors,
+7. verify behavior,
+8. create a checkpoint,
+9. continue.
+
+Do not skip verification.
+
+If a requested capability is impossible with the currently selected runtime
+model, design the application so another compatible local model/provider can
+provide that capability later.
+
+Do not hard-code assumptions that make future providers impossible.
+
+If an architectural decision must change this specification, choose the
+smallest change that preserves the core product goals and document the
+reason.
+
+Prioritize correctness and maintainability over generating large amounts of
+code quickly.
+
+The final result should be a coherent local personal AI application, not a
+collection of disconnected demos.
+
+======================================================================
+77. FINAL PRODUCT VISION
+======================================================================
+
+The finished application should feel like one coherent system:
+
+The user opens the application.
+
+The AI knows the current conversation.
+
+It can remember relevant previous knowledge.
+
+It understands the selected project.
+
+It can inspect files.
+
+It can help write and debug code.
+
+It can use approved computer tools.
+
+It can understand images and screen context when supported.
+
+It can communicate by voice when configured.
+
+It can suggest improvements while the user is writing a request.
+
+It can learn useful workflows.
+
+It can proactively help when there is a strong reason.
+
+It does not need a cloud AI service for its core operation.
+
+Its runtime model can be replaced without rebuilding the entire application.
+
+Its memory can grow without forcing the entire history into every prompt.
+
+Its tools are powerful but permission-controlled.
+
+Its actions can be verified and recovered.
+
+Its architecture can evolve.
+
+Most importantly:
+
+QWEN CODER 8B BUILDS THE APPLICATION.
+
+THE FINISHED APPLICATION IS ITS OWN SYSTEM.
+
+======================================================================
+END OF MASTER BUILD SPECIFICATION
+======================================================================

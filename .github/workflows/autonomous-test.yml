@@ -1,0 +1,247 @@
+# Autonomous test loop — runs the REAL app on the Windows test PC and reports
+# back into GitHub (check annotations, one structured PR comment, artifacts).
+#
+# ⚠️ SECURITY MODEL (read before changing the triggers)
+#   This workflow runs on a SELF-HOSTED runner: the user's own PC with local
+#   Ollama and their files. Therefore:
+#     - it is triggered ONLY by `push` to branches that exist in THIS repository
+#       (main + the arena/* working branches) and by manual dispatch. There is
+#       deliberately NO `pull_request` / `pull_request_target` trigger: a fork PR
+#       could otherwise edit this file and execute arbitrary code on that PC.
+#       Forks are covered by `.github/workflows/pull-request-ci.yml` on
+#       GitHub-hosted runners instead.
+#     - the `if:` guard keeps a re-usable copy of this file from running anywhere
+#       else (e.g. in a fork of the repository that mirrors the workflow).
+#     - no secrets are injected into the job; the default token is read-only for
+#       contents and is only used to write the PR comment / issue.
+#     - it never runs `dist`, never publishes, never touches the installed app's
+#       data directory: every test process gets a throwaway LPAI_DATA_DIR under
+#       %TEMP%, so %APPDATA%\lpai is not modified by a test run.
+name: Autonomous test (Windows runner)
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: 'Nur schnelle Stufen (ohne Smoke/E2E/Ollama)'
+        type: boolean
+        default: false
+      require_ollama:
+        description: 'Ollama als Pflichtvoraussetzung behandeln'
+        type: boolean
+        default: false
+      max_attempts:
+        description: 'Maximale Reparaturrunden pro Änderung'
+        type: string
+        default: '3'
+
+concurrency:
+  group: autonomous-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  autonomous:
+    if: github.repository == 'Kaiserkatze1234/local-personal-ai'
+    # hardware labels come from scripts/windows/install-runner.ps1
+    runs-on: [self-hosted, Windows, X64, lpai-test]
+    timeout-minutes: 90
+    env:
+      LPAI_MAX_FIX_ATTEMPTS: ${{ inputs.max_attempts || '3' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # diffs against the last tested commit are part of the analysis
+
+      - name: Restore cycle state (loop protection)
+        uses: actions/cache/restore@v6
+        with:
+          path: test-reports/cycle-state.json
+          key: lpai-cycle-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            lpai-cycle-${{ github.ref_name }}-
+
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          node -v
+          npm -v
+          (Get-Command ollama -ErrorAction SilentlyContinue) ? 'ollama: present' : 'ollama: not on PATH (tests will SKIP the runtime stage)'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      - name: Run npm run test:autonomous
+        id: run
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $flags = @('--ci')
+          if ('${{ inputs.quick }}' -eq 'true') { $flags += '--quick' }
+          if ('${{ inputs.require_ollama }}' -eq 'true') { $flags += '--require-ollama' }
+          npm run test:autonomous -- @flags
+
+      - name: Save cycle state (loop protection)
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: test-reports/cycle-state.json
+          key: lpai-cycle-${{ github.ref_name }}-${{ github.run_id }}
+
+      - name: Upload test reports, screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lpai-test-reports
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            test-reports/latest.json
+            test-reports/latest.md
+            test-reports/latest-chatgpt.json
+            test-reports/latest-chatgpt.md
+            test-reports/latest-arena-task.md
+            test-reports/latest-fix-prompt.md
+            test-reports/latest-analysis.json
+            test-reports/cycle-state.json
+            test-reports/*.json
+            test-reports/*.md
+            test-reports/artifacts/**
+            test-reports/e2e-artifacts/**
+
+      - name: Upload the machine-readable handoff for the analyzing instance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lpai-ai-handoff
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            test-reports/latest-chatgpt.json
+            test-reports/latest-chatgpt.md
+            test-reports/latest-arena-task.md
+            test-reports/latest-analysis.json
+            test-reports/latest.json
+            test-reports/latest.md
+
+      - name: Failure artifacts (raw, short retention)
+        if: steps.run.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lpai-e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            test-reports/e2e-artifacts/**
+            test-reports/artifacts/**
+
+      - name: Publish report comment on the pull request
+        if: always() && github.ref != 'refs/heads/main'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const marker = '<!-- lpai-autonomous-report -->';
+            let body = marker + '\nAutonomer Testlauf: **kein Report gefunden** (Lauf abgebrochen?)';
+            try {
+              const report = JSON.parse(fs.readFileSync('test-reports/latest.json', 'utf8'));
+              const icon = report.verdict === 'PASS' ? '✅' : report.verdict === 'FAIL' ? '❌' : '🛠️';
+              const rows = (report.stages || []).map((s) => `| ${s.name} | ${s.status} | ${(s.durationMs / 1000).toFixed(1)} s |`).join('\n');
+              const lines = [
+                marker,
+                `## ${icon} Autonomer Windows-Test: ${report.verdict}`,
+                '',
+                `Commit \`${String(report.git?.commit || '').slice(0, 10)}\` · \`${report.git?.branch}\` · ${(report.durationMs / 1000).toFixed(0)} s · Node ${report.runner?.node} · Runner \`${report.runner?.name}\``,
+                `Ollama: ${report.ollama?.reachable ? `erreichbar (${report.ollama.baseUrl})` : 'nicht erreichbar (Runtime-Stufen übersprungen)'}`,
+                '',
+                '| Stufe | Status | Dauer |',
+                '| --- | --- | --- |',
+                rows,
+              ];
+              const failed = report.summary?.failedTests || [];
+              if (failed.length) lines.push('', `Fehlgeschlagene Tests: ${failed.slice(0, 10).map((t) => '`' + t + '`').join(', ')}`);
+              if (report.analysis?.final) lines.push('', `Analyse: **${report.analysis.final.category}** (${report.analysis.final.confidence}) — ${report.analysis.final.probableCause}`);
+              if (report.stages?.some((s) => s.status === 'INFRASTRUCTURE_ERROR')) lines.push('', '⚠️ Mindestens eine Stufe ist **INFRASTRUCTURE_ERROR** — Umgebung prüfen, das ist kein Codefehler.');
+              if (report.guards?.stop) lines.push('', `⛔ Automatischer Reparaturzyklus **gestoppt**: ${(report.guards.reasons || []).join(', ')} — bewusste Entscheidung nötig.`);
+              lines.push('', `Reparaturauftrag: \`test-reports/latest-arena-task.md\` · Digest: \`test-reports/latest-chatgpt.json\` (Artefakt \`lpai-ai-handoff\`)${report.runner?.githubRunUrl ? ` · [Lauf](${report.runner.githubRunUrl})` : ''}`);
+              // the compact digest is appended verbatim (collapsed) so that an
+              // analyzing instance can read the whole run WITHOUT an artifact
+              // download — the comment is public and plain markdown.
+              try {
+                const digest = fs.readFileSync('test-reports/latest-chatgpt.md', 'utf8').trim();
+                if (digest) lines.push('', '<details><summary>Digest für die Analyse (latest-chatgpt.md)</summary>', '', digest.slice(0, 6000), '', '</details>');
+              } catch (e) { /* no digest (run died early) — the human part above still stands */ }
+              body = lines.join('\n');
+            } catch (e) {
+              body = marker + `\nReport konnte nicht gelesen werden: ${e.message}`;
+            }
+            const branch = context.ref.replace('refs/heads/', '');
+            const prs = await github.rest.pulls.list({ ...context.repo, head: `${context.repo.owner}:${branch}`, state: 'all', per_page: 5 });
+            if (prs.data.length === 0) {
+              core.info(`kein PR für ${branch} — Kommentar übersprungen`);
+              return;
+            }
+            const pr = prs.data[0];
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: pr.number, per_page: 100 });
+            const existing = comments.find((c) => (c.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+              core.info(`Kommentar aktualisiert (#${pr.number})`);
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body });
+              core.info(`Kommentar erstellt (#${pr.number})`);
+            }
+
+      - name: Escalate when the automatic loop is stopped
+        if: always() && steps.run.outcome == 'failure'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let stop = false, reasons = [], commit = '';
+            try {
+              const report = JSON.parse(fs.readFileSync('test-reports/latest.json', 'utf8'));
+              stop = Boolean(report.guards?.stop);
+              reasons = report.guards?.reasons || [];
+              commit = String(report.git?.commit || '').slice(0, 10);
+            } catch { /* no report: nothing to escalate */ }
+            if (!stop) {
+              core.info('Zyklus läuft weiter — kein Issue nötig.');
+              return;
+            }
+            const title = `Autonomer Testzyklus gestoppt (${reasons.join(', ')})`;
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'needs-human', per_page: 20 });
+            const body = [
+              `Der automatische Reparaturzyklus hat sich für \`${commit}\` gestoppt.`,
+              '',
+              `Gründe: ${reasons.map((r) => `\`${r}\``).join(', ')}`,
+              '',
+              'Das bedeutet bewusst: **nicht** weiter automatisch reparieren. Der vollständige Report und der Reparaturauftrag liegen in den Artefakten `lpai-test-reports` und `lpai-ai-handoff` dieses Laufs.',
+              '',
+              `Lauf: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            if (open.length > 0) {
+              const issue = open[0];
+              await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body });
+              core.info(`Issue #${issue.number} kommentiert`);
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body, labels: ['needs-human'] });
+              core.info('Issue erstellt');
+            }
+
+      - name: Fail the job when the suite failed
+        if: steps.run.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Write-Host "test:autonomous reported a failure — see the report artifact."
+          exit 1
